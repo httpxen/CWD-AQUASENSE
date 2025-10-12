@@ -1,2 +1,7 @@
 # .gitignore
 .env
+
+# Ignore specific uploads folders
+Uploads/complaints/
+assets/icons/uploads/staff/
+Uploads/
