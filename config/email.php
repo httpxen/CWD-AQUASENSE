@@ -129,7 +129,7 @@ class EmailService {
 <body>
     <div class="container">
         <div class="header">
-            <img src="https://scontent.fmnl30-3.fna.fbcdn.net/v/t39.30808-6/307024352_563812002211278_7537666014122218120_n.png?_nc_cat=105&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeG74VMVxb-J_ykTIn9PFr0ewU04b9Q9_AjBTThv1D38CHFCIQydzoMTuJKEVpjtKh0_PyAhx8YOE4JqFxhFCBnd&_nc_ohc=iYzqBdH1hmIQ7kNvwFH7DJK&_nc_oc=AdkfNr8rJ6I8FEe5rYVE8bcmsVNG_Q1vvHbUkvr6h_2Gidrx9kw5GUs4fC5I-BxvEHI&_nc_zt=23&_nc_ht=scontent.fmnl30-3.fna&_nc_gid=w5PcwQTvGzD9DdMhoZ9Qqg&oh=00_AfbdyuI73IArAQIEZwxS-s3152O7JBNeDoNFGntEnM20Bw&oe=68D590D8" alt="CWD AquaSense Logo">
+            <img src="https://scontent.fmnl30-2.fna.fbcdn.net/v/t39.30808-6/558176218_1569224014514651_1613141673135955719_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=127cfc&_nc_eui2=AeEwXwZ3wT3zsxY0OFgxTkT9D1SPqxuJhVAPVI-rG4mFUKP0RkOPF4f1npcofVT6e7mp6LB88Le_HOJW6j8oEn-w&_nc_ohc=fI-_a8oqlvsQ7kNvwEewFnA&_nc_oc=AdkwVc_gm3IpWYPEpdKucJegCgmDqcz4-9BA24eFEgjQUbSbrqXs6Fm6t2uD3l4xFC4&_nc_zt=23&_nc_ht=scontent.fmnl30-2.fna&_nc_gid=upUbDPiTij73QJHKKLsVTQ&oh=00_AfalKNyHSo0eGGRMYIUtr-EAeBOYtlWyTOuSl9SXqWYZjQ&oe=68E2EB9D" alt="CWD AquaSense Logo">
             <h1>Password Reset Request</h1>
         </div>
         <div class="content">
@@ -212,7 +212,7 @@ HTML;
 <body>
     <div class="container">
         <div class="header">
-            <img src="https://scontent.fmnl30-3.fna.fbcdn.net/v/t39.30808-6/307024352_563812002211278_7537666014122218120_n.png?_nc_cat=105&ccb=1-7&_nc_sid=6ee11a&_nc_eui2=AeG74VMVxb-J_ykTIn9PFr0ewU04b9Q9_AjBTThv1D38CHFCIQydzoMTuJKEVpjtKh0_PyAhx8YOE4JqFxhFCBnd&_nc_ohc=iYzqBdH1hmIQ7kNvwFH7DJK&_nc_oc=AdkfNr8rJ6I8FEe5rYVE8bcmsVNG_Q1vvHbUkvr6h_2Gidrx9kw5GUs4fC5I-BxvEHI&_nc_zt=23&_nc_ht=scontent.fmnl30-3.fna&_nc_gid=w5PcwQTvGzD9DdMhoZ9Qqg&oh=00_AfbdyuI73IArAQIEZwxS-s3152O7JBNeDoNFGntEnM20Bw&oe=68D590D8" alt="CWD AquaSense Logo">
+            <img src="https://scontent.fmnl30-2.fna.fbcdn.net/v/t39.30808-6/558176218_1569224014514651_1613141673135955719_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=127cfc&_nc_eui2=AeEwXwZ3wT3zsxY0OFgxTkT9D1SPqxuJhVAPVI-rG4mFUKP0RkOPF4f1npcofVT6e7mp6LB88Le_HOJW6j8oEn-w&_nc_ohc=wNZ1whyV8VcQ7kNvwEhkpU9&_nc_oc=AdkC920K3XgJor2ljRHplmSZIwIN0Hiy0aJn1OqEfktz-QQDTAGhL7KdtF93Al2jQ7w&_nc_zt=23&_nc_ht=scontent.fmnl30-2.fna&_nc_gid=mtMoLIMPvbWCiMcIfBYykQ&oh=00_Affd5DFg3d_9BC0mEbQOjqI1gcyZFmEn5JJIp9dP6jtnlw&oe=68EC261D" alt="CWD AquaSense Logo">
             <h1>Welcome to AquaSense!</h1>
         </div>
         <div class="content">
