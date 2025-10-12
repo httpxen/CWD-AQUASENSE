@@ -205,34 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-    <style>
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .sidebar { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .status { border-radius: 0.5rem; padding: 0.75rem 1rem; }
-        .avatar-glow { position: relative; cursor: pointer; }
-        .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
-        .avatar-glow:hover::before { opacity: 1; }
-        .notification-badge { position: absolute; top: -2px; right: -2px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); }
-        .group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.2s ease; }
-        @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
-        .profile-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .profile-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08); }
-        .dashboard-icon { width: 24px; height: 24px; }
-        .complaints-icon { width: 24px; height: 24px; }
-        .feedback-icon { width: 24px; height: 24px; }
-        .profile-icon { width: 24px; height: 24px; }
-        .header-2025 { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.2); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); }
-        html { scroll-behavior: smooth; }
-        /* Modal Styles */
-        .modal { display: none; position: fixed; z-index: 50; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8); }
-        .modal-content { margin: auto; display: block; max-width: 90%; max-height: 90%; width: auto; height: auto; border-radius: 8px; }
-        .modal-close { position: absolute; top: 15px; right: 35px; color: #f1f1f1; font-size: 40px; font-weight: bold; cursor: pointer; }
-        .modal-close:hover { color: #bbb; }
-    </style>
+    <link rel="stylesheet" href="css/accountsettings.css">
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
@@ -270,11 +243,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </svg>
                         Give Feedback
                     </a>
-                    <a href="accountsettings.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 border border-blue-200 transition-all duration-200 hover:bg-blue-100">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="profile-icon mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    <a href="chatbot.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
                         </svg>
-                        Profile
+                        Chatbot
                     </a>
                 </nav>
 
@@ -290,7 +263,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     </div>
                     <a href="../logout.php" class="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
-                        <i class="fas fa-sign-out-alt mr-2"></i>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2 text-red-600">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
                         Sign Out
                     </a>
                 </div>
@@ -309,9 +284,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="flex items-center space-x-4">
                             <!-- Notification Button -->
                             <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <i class="fas fa-bell text-lg"></i>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
+                                </svg>
                                 <div class="notification-badge">3</div>
                             </button>
+
                             <!-- Profile Dropdown - 2025 Style -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <!-- Avatar with Glow Effect -->
@@ -352,30 +330,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <section class="xl:col-span-1 card p-6">
                         <h2 class="text-lg font-semibold text-gray-900 mb-4">Profile Overview</h2>
                         <div class="flex items-center space-x-4 mb-6">
-                            <div class="avatar-glow" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
+                            <div class="avatar-glow relative" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
                                 <img src="<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>" alt="Avatar" class="w-20 h-20 rounded-full object-cover"/>
                                 <i class="fas fa-expand absolute bottom-1 right-1 text-white bg-black bg-opacity-50 rounded-full p-1 text-xs" style="display: block;"></i>
                             </div>
-                            <div>
-                                <p class="text-xl font-bold text-gray-900"><?php echo htmlspecialchars($user['first_name'] . ' ' . $user['last_name']); ?></p>
-                                <p class="text-gray-500 text-sm">Member since <?php echo date('F j, Y', strtotime($user['created_at'])); ?></p>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xl font-bold text-gray-900 truncate"><?php echo htmlspecialchars(($user['first_name'] ?? '') . ' ' . ($user['middle_name'] ?? '') . ' ' . ($user['last_name'] ?? '')); ?></p>
+                                <p class="text-sm text-gray-600 mt-1">@<?php echo htmlspecialchars($user['username']); ?></p>
+                                <p class="text-xs text-gray-500 mt-1">Member since <?php echo date('F j, Y', strtotime($user['created_at'])); ?></p>
                             </div>
                         </div>
 
                         <form method="post" enctype="multipart/form-data" class="space-y-3">
                             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>" />
                             <input type="hidden" name="action" value="upload_avatar" />
-                            <label class="block">
-                                <span class="text-sm font-medium text-gray-700">Change Avatar</span>
-                                <input type="file" name="profile_picture" id="profile_picture_input" accept="image/*" class="mt-1 block w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-lg p-2" />
-                            </label>
+                            <div class="upload-zone">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="mx-auto mb-2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <p class="text-sm font-medium text-gray-700 mb-1">Drop your photo here, or <label for="profile_picture_input" class="text-blue-600 hover:text-blue-800 cursor-pointer">browse</label></p>
+                                <p class="text-xs text-gray-500">JPG, PNG, WEBP. Max 3MB. Recommended: 400x400px.</p>
+                                <input type="file" name="profile_picture" id="profile_picture_input" accept="image/jpeg,image/png,image/webp" class="hidden" />
+                            </div>
                             <!-- Preview Image -->
                             <div id="preview-container" class="hidden flex flex-col items-center space-y-2">
                                 <img id="preview" class="w-20 h-20 rounded-full object-cover border-2 border-gray-200" alt="Preview" />
                                 <p class="text-xs text-gray-500 text-center">Preview</p>
                             </div>
-                            <button class="w-full btn-primary rounded-lg px-4 py-2 font-medium">Upload</button>
-                            <p class="text-xs text-gray-500">Accepted: JPG, PNG, WEBP. Max 3MB.</p>
+                            <button type="submit" class="w-full btn-primary rounded-lg px-4 py-2 font-medium">Upload Avatar</button>
                         </form>
                     </section>
 
@@ -388,31 +370,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>" />
                                 <input type="hidden" name="action" value="update_profile" />
 
-                                <label class="block">
-                                    <span class="text-sm font-medium text-gray-700">First Name <span class="text-red-500">*</span></span>
-                                    <input type="text" name="first_name" value="<?php echo htmlspecialchars($user['first_name']); ?>" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
-                                </label>
-                                <label class="block">
-                                    <span class="text-sm font-medium text-gray-700">Middle Name</span>
-                                    <input type="text" name="middle_name" value="<?php echo htmlspecialchars($user['middle_name']); ?>" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
-                                </label>
-                                <label class="block">
-                                    <span class="text-sm font-medium text-gray-700">Last Name <span class="text-red-500">*</span></span>
-                                    <input type="text" name="last_name" value="<?php echo htmlspecialchars($user['last_name']); ?>" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
-                                </label>
-                                <div></div>
+                                <div class="md:col-span-2">
+                                    <label class="block mb-2">
+                                        <span class="text-sm font-medium text-gray-700">Full Name <span class="text-red-500">*</span></span>
+                                    </label>
+                                    <div class="flex space-x-3">
+                                        <input type="text" name="first_name" value="<?php echo htmlspecialchars($user['first_name']); ?>" placeholder="First Name" class="flex-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
+                                        <input type="text" name="middle_name" value="<?php echo htmlspecialchars($user['middle_name']); ?>" placeholder="Middle Name" class="flex-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+                                        <input type="text" name="last_name" value="<?php echo htmlspecialchars($user['last_name']); ?>" placeholder="Last Name" class="flex-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
+                                    </div>
+                                </div>
 
-                                <label class="block md:col-span-1">
+                                <label class="block">
                                     <span class="text-sm font-medium text-gray-700">Username <span class="text-red-500">*</span></span>
                                     <input type="text" name="username" value="<?php echo htmlspecialchars($user['username']); ?>" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
-                                    <span class="text-xs text-gray-500">3–30 chars, letters, numbers, dot, dash, underscore.</span>
+                                    <span class="text-xs text-gray-500">3–30 characters (letters, numbers, ., -, _)</span>
                                 </label>
-                                <label class="block md:col-span-1">
-                                    <span class="text-sm font-medium text-gray-700">Email <span class="text-red-500">*</span></span>
+                                <label class="block">
+                                    <span class="text-sm font-medium text-gray-700">Email Address <span class="text-red-500">*</span></span>
                                     <input type="email" name="email" value="<?php echo htmlspecialchars($user['email']); ?>" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
+                                    <span class="text-xs text-gray-500">We'll never share your email with anyone else.</span>
                                 </label>
 
-                                <div class="md:col-span-2 flex justify-end pt-2">
+                                <div class="md:col-span-2 flex justify-end pt-2 space-x-3">
+                                    <button type="button" class="px-5 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
                                     <button type="submit" class="btn-primary rounded-lg px-5 py-2 font-medium">Save Changes</button>
                                 </div>
                             </form>
@@ -427,19 +408,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                 <label class="block md:col-span-2">
                                     <span class="text-sm font-medium text-gray-700">Current Password</span>
-                                    <input type="password" name="current_password" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required />
+                                    <input type="password" name="current_password" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" required autocomplete="current-password" />
+                                    <span class="text-xs text-gray-500">Enter your current password to proceed.</span>
                                 </label>
                                 <label class="block">
-                                    <span class="text-sm font-medium text-gray-700">New Password</span>
-                                    <input type="password" name="new_password" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" minlength="8" required />
-                                    <span class="text-xs text-gray-500">At least 8 characters.</span>
+                                    <span class="text-sm font-medium text-gray-700">New Password <span class="text-red-500">*</span></span>
+                                    <input type="password" name="new_password" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" minlength="8" required autocomplete="new-password" />
+                                    <span class="text-xs text-gray-500">At least 8 characters, including uppercase, lowercase, and number.</span>
                                 </label>
                                 <label class="block">
-                                    <span class="text-sm font-medium text-gray-700">Confirm New Password</span>
-                                    <input type="password" name="confirm_password" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" minlength="8" required />
+                                    <span class="text-sm font-medium text-gray-700">Confirm New Password <span class="text-red-500">*</span></span>
+                                    <input type="password" name="confirm_password" class="mt-1 block w-full border border-gray-200 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" minlength="8" required autocomplete="new-password" />
                                 </label>
 
-                                <div class="md:col-span-2 flex justify-end pt-2">
+                                <div class="md:col-span-2 flex justify-end pt-2 space-x-3">
+                                    <button type="button" class="px-5 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
                                     <button type="submit" class="btn-primary rounded-lg px-5 py-2 font-medium">Update Password</button>
                                 </div>
                             </form>
@@ -505,14 +488,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function showProfileDropdown() {
             profileDropdownMenu.innerHTML = `
                 <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                    <i class="fas fa-user mr-3 text-blue-500"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    </svg>
                     My Profile
                 </a>
                 <div class="border-t border-gray-100 my-1"></div>
                 <a href="../logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
-                    <i class="fas fa-sign-out-alt mr-3"></i>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-red-600">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                    </svg>
                     Sign Out
                 </a>
+
             `;
             profileDropdownMenu.classList.remove('hidden');
             

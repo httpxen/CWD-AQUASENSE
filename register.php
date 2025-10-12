@@ -93,7 +93,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     INSERT INTO users
     (username, first_name, middle_name, last_name, email, password, created_at,
      accepted_terms_version, accepted_terms_at, accepted_terms_ip, accepted_terms_ua)
-    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), ?, ?)
 ");
 
 
@@ -264,7 +264,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       <div class="text-center mb-8">
         <div class="logo-container w-16 h-16 flex items-center justify-center mx-auto rounded-2xl shadow-sm mb-6 p-1">
           <div class="bg-white rounded-xl w-14 h-14 flex items-center justify-center shadow-sm">
-            <img class="h-7 w-7" src="assets/icons/CWD.png" alt="CWD Logo">
+            <img class="h-7 w-7" src="assets/icons/AquaSense.png" alt="CWD Logo">
           </div>
         </div>
         <h1 class="text-3xl font-bold leading-9 tracking-tight text-gray-900 mb-2">Create Account</h1>

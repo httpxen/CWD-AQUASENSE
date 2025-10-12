@@ -1,0 +1,230 @@
+/* Base font and global styles */
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Sidebar styles */
+.sidebar {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 256px;
+}
+
+/* Card styles for feedback form and history */
+.card {
+    background: #ffffff;
+    border: 2px solid rgba(0, 0, 0, 0.2);
+    border-radius: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Primary button styles */
+.btn-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    color: white;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Avatar glow effect */
+.avatar-glow {
+    position: relative;
+    cursor: pointer;
+}
+
+.avatar-glow::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6);
+    border-radius: 50%;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.avatar-glow:hover::before {
+    opacity: 1;
+}
+
+/* Notification badge styles */
+.notification-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+/* Chevron animation for dropdown */
+.group:hover .fa-chevron-down {
+    transform: rotate(180deg);
+    transition: transform 0.2s ease;
+}
+
+/* Gentle pulse animation for online indicator */
+@keyframes gentle-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-gentle-pulse {
+    animation: gentle-pulse 2s infinite;
+}
+
+/* Profile card styles */
+.profile-card {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.profile-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+}
+
+/* Icon sizes for sidebar */
+.dashboard-icon,
+.complaints-icon,
+.feedback-icon,
+.profile-icon {
+    width: 24px;
+    height: 24px;
+}
+
+/* Header styles */
+.header-2025 {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom: 2px solid rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    margin-left: 256px;
+    width: calc(100% - 256px);
+}
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Main content area */
+main {
+    margin-left: 256px;
+    padding: 2rem;
+}
+
+/* Feedback container layout */
+.feedback-container {
+    display: flex;
+    flex-direction: row;
+    gap: 2rem;
+}
+
+/* Feedback form and history sections */
+.feedback-form {
+    flex: 1;
+    min-width: 0;
+}
+
+.feedback-history {
+    flex: 1;
+    min-width: 0;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+/* Scrollbar styles for feedback history */
+.feedback-history::-webkit-scrollbar {
+    width: 8px;
+}
+
+.feedback-history::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+.feedback-history::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+.feedback-history::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Textarea styles */
+.textarea {
+    transition: all 0.2s ease;
+}
+
+.textarea:focus {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+/* Feedback item styles */
+.feedback-item {
+    transition: all 0.2s ease;
+    border: 2px solid rgba(0, 0, 0, 0.2);
+    border-radius: 0.5rem;
+}
+
+.feedback-item:hover {
+    background: #f8fafc;
+    transform: translateY(-2px);
+}
+
+/* Optional: Custom orange styling for Neutral sentiment (if not using Tailwind's defaults) */
+.bg-orange-100 {
+    background-color: #fed7aa; /* Tailwind's orange-100 */
+}
+
+.text-orange-700 {
+    color: #c2410c; /* Tailwind's orange-700 */
+}
+
+/* Optional: Custom hover effect for orange sentiment */
+.bg-orange-100:hover {
+    background-color: #fed7aa; /* Slightly darker orange on hover, adjust if needed */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 767px) {
+    .header-2025 {
+        margin-left: 0;
+        width: 100%;
+    }
+    main {
+        margin-left: 0;
+        padding: 1rem;
+    }
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    .sidebar.translate-x-0 {
+        transform: translateX(0);
+    }
+    .feedback-container {
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+}
