@@ -1,5 +1,6 @@
 <?php
 include 'db/db.php';
+session_name('AdminSession'); // Separate session for admins
 session_start();
 
 // Session timeout duration (30 minutes)

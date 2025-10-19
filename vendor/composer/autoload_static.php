@@ -116,6 +116,16 @@ class ComposerStaticInit7df20c08a4fd12eeda440fc171ca5a7d
         ),
     );
 
+    public static $prefixesPsr0 = array (
+        'N' => 
+        array (
+            'NlpTools\\' => 
+            array (
+                0 => __DIR__ . '/..' . '/nlp-tools/nlp-tools/src',
+            ),
+        ),
+    );
+
     public static $classMap = array (
         'Attribute' => __DIR__ . '/..' . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
@@ -142,6 +152,7 @@ class ComposerStaticInit7df20c08a4fd12eeda440fc171ca5a7d
         return \Closure::bind(function () use ($loader) {
             $loader->prefixLengthsPsr4 = ComposerStaticInit7df20c08a4fd12eeda440fc171ca5a7d::$prefixLengthsPsr4;
             $loader->prefixDirsPsr4 = ComposerStaticInit7df20c08a4fd12eeda440fc171ca5a7d::$prefixDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit7df20c08a4fd12eeda440fc171ca5a7d::$prefixesPsr0;
             $loader->classMap = ComposerStaticInit7df20c08a4fd12eeda440fc171ca5a7d::$classMap;
 
         }, null, ClassLoader::class);

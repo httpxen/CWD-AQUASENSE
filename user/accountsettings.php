@@ -1,5 +1,6 @@
 <?php
 include '../db/db.php';
+session_name('CustomerSession');
 session_start();
 
 // ---------------------------

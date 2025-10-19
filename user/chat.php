@@ -1,26 +1,27 @@
 <?php
-include '../db/db.php';
-session_start();
-
 require __DIR__ . '/../vendor/autoload.php';
 
 use Dotenv\Dotenv;
+
+// Database configuration
+$dbHost = 'localhost';
+$dbUser = 'root';
+$dbPass = '';
+$dbName = 'cwd_aquasense';
 
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
 header('Content-Type: application/json');
 header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-// Catch ALL runtime errors and convert to JSON
+// Catch runtime errors and convert to JSON
 set_exception_handler(function ($e) {
     error_log("Uncaught exception: " . $e->getMessage());
-    echo json_encode(['error' => 'Server exception: ' . $e->getMessage()]);
-    exit;
-});
-set_error_handler(function ($errno, $errstr, $errfile, $errline) {
-    error_log("PHP error: $errstr in $errfile:$errline");
-    echo json_encode(['error' => 'Server error: ' . $errstr]);
+    http_response_code(500);
+    echo json_encode(['error' => 'Server error occurred. Please try again later.']);
     exit;
 });
 
@@ -30,113 +31,120 @@ $dotenv->load();
 
 $apiKey = $_ENV['OPENAI_API_KEY'] ?? null;
 if (!$apiKey) {
-    echo json_encode(['error' => 'Missing OpenAI API key in .env']);
+    http_response_code(500);
+    echo json_encode(['error' => 'Server configuration error.']);
     exit;
 }
 
-// Get user_id from session
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['error' => 'User not logged in']);
+// Connect to MySQL
+try {
+    $pdo = new PDO("mysql:host=$dbHost;dbname=$dbName", $dbUser, $dbPass);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    error_log("Database connection failed: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Database connection error.']);
     exit;
 }
-$user_id = (int)$_SESSION['user_id'];
 
 // Parse input
 $input = json_decode(file_get_contents('php://input'), true);
-if (!isset($input['messages']) || !is_array($input['messages'])) {
-    echo json_encode(['error' => 'No valid messages provided']);
+if (!isset($input['messages']) || !is_array($input['messages']) || empty($input['messages'])) {
+    http_response_code(400);
+    echo json_encode(['error' => 'No valid messages provided.']);
+    exit;
+}
+
+// Extract user token (assumed to be sent in Authorization header)
+$headers = getallheaders();
+$token = isset($headers['Authorization']) ? str_replace('Bearer ', '', $headers['Authorization']) : null;
+if (!$token) {
+    http_response_code(401);
+    echo json_encode(['error' => 'Authentication token required.']);
+    exit;
+}
+
+// Verify user token and get user_id
+try {
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE remember_token = :token AND token_expiry > NOW()");
+    $stmt->execute(['token' => $token]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid or expired token.']);
+        exit;
+    }
+    $userId = $user['id'];
+} catch (PDOException $e) {
+    error_log("Token verification failed: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Authentication error.']);
+    exit;
+}
+
+// Extract the latest user message
+$userMessage = end($input['messages'])['content'] ?? '';
+if (empty($userMessage)) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Message content is empty.']);
     exit;
 }
 
 try {
     $client = \OpenAI::client($apiKey);
 
-    // Enhanced system prompt for guided interactions with buttons
+    // System prompt for complaint handling
     $systemPrompt = [
         'role' => 'system',
-        'content' => 'You are Kuya Daloy, a friendly and helpful water management assistant for CWD AquaSense. Respond in Taglish (mix of Tagalog and English), keep it fun and concise. Focus on: water bills, complaints filing, usage tips, leak detection, payment options. If unsure, suggest contacting support@aquasense.com.
-
-            For common queries, suggest quick actions. If the user wants to file a complaint (keywords: complain, problema, issue, sumbong, report, file complaint, I want to file a complaint), guide them step-by-step with interactive buttons:
-
-            1. Ask for category: Output ONLY this JSON: {"type":"buttons", "message":"Ano po ang category ng complaint niyo? Piliin sa mga ito:", "buttons":["Water Supply Issues", "Billing Concerns", "Meter Problems", "Leaks", "Other"]}
-
-            2. After user selects category, ask for description: Output ONLY: {"type":"input", "message":"Sabihin mo po ang detailed description ng issue mo (hal. location, duration, etc.)."}
-
-            3. After description, confirm: Output ONLY: {"type":"confirm", "message":"Confirm po: Category - [CATEGORY], Description - [DESCRIPTION]. Tama ba? Kung oo, piliin \'Yes\' to file.", "buttons":["Yes", "No"]}
-
-            4. If user says "Yes" or confirms, output ONLY: {"action": "file_complaint", "category": "EXACT_CATEGORY", "description": "FULL_DESCRIPTION"}
-
-            For other responses, use normal text. Keep guidance under 100 words. Use buttons format only when guiding complaints.'
+        'content' => 'You are a friendly and empathetic customer service chatbot for CWD. Understand and respond to complaints in English, Tagalog, or Taglish, matching the user\'s language and tone. Provide concise, helpful, and professional responses. Acknowledge the issue, apologize if appropriate, and offer a solution or next steps. Analyze the sentiment (Positive, Negative, Neutral). Categorize the complaint (e.g., Billing, Water Supply, Water Quality, Technical, Customer Service). Return a JSON response with: `response` (reply to user), `category` (complaint type), `sentiment` (Positive, Negative, Neutral), and `urgency` (Low, Medium, High).'
     ];
     $messages = array_merge([$systemPrompt], $input['messages']);
 
+    // Make API call to OpenAI
     $result = $client->chat()->create([
-        'model' => 'gpt-4o-mini', // Model of OpenAI chatbot
+        'model' => 'gpt-4o-mini',
         'messages' => $messages,
-        'max_tokens' => 250,  // Increased for structured outputs
+        'max_tokens' => 250,
         'temperature' => 0.7,
     ]);
 
-    $rawAnswer = $result->choices[0]->message->content ?? 'Sorry, walang response.';
+    $answer = $result->choices[0]->message->content ?? '{}';
+    $answerData = json_decode($answer, true);
 
-    // Check if this is a complaint filing action
-    $filingData = null;
-    $structuredResponse = null;
-    $jsonStart = strpos($rawAnswer, '{');
-    if ($jsonStart !== false) {
-        $jsonEnd = strrpos($rawAnswer, '}') + 1;
-        $jsonStr = substr($rawAnswer, $jsonStart, $jsonEnd - $jsonStart);
-        $decoded = json_decode($jsonStr, true);
-        if (json_last_error() === JSON_ERROR_NONE) {
-            if (isset($decoded['action']) && $decoded['action'] === 'file_complaint' && isset($decoded['category']) && isset($decoded['description'])) {
-                $filingData = $decoded;
-                
-                // Insert into database
-                $category = mysqli_real_escape_string($conn, $filingData['category']);
-                $description = mysqli_real_escape_string($conn, $filingData['description']);
-                
-                $insertQuery = "INSERT INTO complaints (user_id, category, description, status, action_due) VALUES (?, ?, ?, 'Pending', DATE_ADD(CURDATE(), INTERVAL 7 DAY))";
-                $stmt = mysqli_prepare($conn, $insertQuery);
-                mysqli_stmt_bind_param($stmt, "iss", $user_id, $category, $description);
-                
-                if (mysqli_stmt_execute($stmt)) {
-                    $complaint_id = mysqli_insert_id($conn);
-                    $rawAnswer = json_encode([
-                        'type' => 'success',
-                        'message' => "Salamat po! Complaint mo ay na-file na. Reference #: {$complaint_id}. I-check mo sa My Complaints section. May update kaagad! 😊"
-                    ]);
-                } else {
-                    error_log("Complaint insert failed: " . mysqli_error($conn));
-                    $rawAnswer = json_encode([
-                        'type' => 'error',
-                        'message' => "Oops, may issue sa filing. Try ulit or contact support@aquasense.com. Sorry ha!"
-                    ]);
-                }
-                mysqli_stmt_close($stmt);
-            } else {
-                // It's a structured response for UI (buttons, etc.)
-                $structuredResponse = $decoded;
-                $rawAnswer = json_encode($structuredResponse);
-            }
-        }
+    // Validate JSON response
+    if (!is_array($answerData) || !isset($answerData['response'], $answerData['category'], $answerData['sentiment'], $answerData['urgency'])) {
+        throw new Exception('Invalid response format from AI.');
     }
 
-    echo json_encode(['answer' => trim($rawAnswer)]);
+    // Store complaint in database
+    $stmt = $pdo->prepare("
+        INSERT INTO complaints (user_id, category, description, sentiment, status)
+        VALUES (:user_id, :category, :description, :sentiment, 'Pending')
+    ");
+    $stmt->execute([
+        'user_id' => $userId,
+        'category' => $answerData['category'],
+        'description' => $userMessage,
+        'sentiment' => $answerData['sentiment'],
+    ]);
+
+    // Optionally assign complaint to staff (e.g., based on category or urgency)
+    if ($answerData['urgency'] === 'High') {
+        $stmt = $pdo->prepare("
+            INSERT INTO complaint_assignments (complaint_id, staff_id, status)
+            SELECT LAST_INSERT_ID(), staff_id, 'Assigned'
+            FROM staff
+            WHERE role = 'Support' LIMIT 1
+        ");
+        $stmt->execute();
+    }
+
+    // Return chatbot response to user
+    echo json_encode(['answer' => $answerData['response']]);
 
 } catch (Throwable $e) {
-    $fullError = $e->getMessage();
-    error_log("API request failed: $fullError | Key preview: " . substr($apiKey, 0, 10) . '...');
-    
-    // Handle common errors
-    if (strpos($fullError, '401') !== false || strpos($fullError, 'invalid') !== false) {
-        $fullError = 'Invalid API key—check your .env and OpenAI dashboard.';
-    } elseif (strpos($fullError, '429') !== false) {
-        $fullError = 'Rate limit hit—try again in 1 min or upgrade plan.';
-    }
-    
-    echo json_encode(['error' => $fullError]);
+    error_log("API request failed: " . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Unable to process your request at this time.']);
 }
-
-if (isset($stmt)) mysqli_stmt_close($stmt);
-mysqli_close($conn);
 ?>

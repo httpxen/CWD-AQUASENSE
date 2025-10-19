@@ -29,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['csrf_token']) || !ha
 $complaint_id = (int)($_POST['complaint_id'] ?? 0);
 $new_status = trim($_POST['status'] ?? '');
 $action_due = !empty(trim($_POST['action_due'])) ? trim($_POST['action_due']) : null;
+$resolved_at = in_array($new_status, ['Resolved', 'Closed']) && !empty(trim($_POST['resolved_at'])) ? trim($_POST['resolved_at']) : null;
 
 $ALLOWED_STATUSES = ['Pending', 'In Progress', 'Resolved', 'Closed'];
 if ($complaint_id <= 0 || !in_array($new_status, $ALLOWED_STATUSES, true)) {
@@ -50,11 +51,11 @@ if (mysqli_stmt_get_result($check_stmt)->num_rows === 0) {
 }
 mysqli_stmt_close($check_stmt);
 
-// Update the complaint status and action_due
-$sql = "UPDATE complaints SET status = ?, action_due = ?, updated_at = NOW() WHERE complaint_id = ?";
+// Update the complaint status, action_due, and resolved_at if applicable
+$sql = "UPDATE complaints SET status = ?, action_due = ?, resolved_at = ?, updated_at = NOW() WHERE complaint_id = ?";
 $stmt = mysqli_prepare($conn, $sql);
-$types = "ssi";
-$params = [$new_status, $action_due, $complaint_id];
+$types = "sssi";
+$params = [$new_status, $action_due, $resolved_at, $complaint_id];
 mysqli_stmt_bind_param($stmt, $types, ...$params);
 
 if (mysqli_stmt_execute($stmt)) {

@@ -4,7 +4,8 @@
         "vlucas/phpdotenv": "^5.6",
         "guzzlehttp/guzzle": "^7.10",
         "openai-php/client": "^0.16.1",
-        "tecnickcom/tcpdf": "^6.10"
+        "tecnickcom/tcpdf": "^6.10",
+        "nlp-tools/nlp-tools": "^0.1.3"
     },
     "config": {
         "allow-plugins": {
