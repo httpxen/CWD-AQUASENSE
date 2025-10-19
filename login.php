@@ -1,5 +1,6 @@
 <?php
 include 'db/db.php';
+session_name('CustomerSession'); // Separate session for customers
 session_start();
 
 // Session timeout duration (30 minutes)
@@ -28,6 +29,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $row = mysqli_fetch_assoc($result);
 
         if (password_verify($password, $row['password'])) {
+            // Update last_login
+            $update_login = "UPDATE users SET last_login = NOW() WHERE id = ?";
+            $login_stmt = mysqli_prepare($conn, $update_login);
+            mysqli_stmt_bind_param($login_stmt, "i", $row['id']);
+            mysqli_stmt_execute($login_stmt);
+            mysqli_stmt_close($login_stmt);
+
+            // Set session variables
             $_SESSION['username'] = $row['username'];
             $_SESSION['user_id'] = $row['id'];
             $_SESSION['LAST_ACTIVITY'] = time();

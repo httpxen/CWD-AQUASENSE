@@ -73,7 +73,7 @@ if (isset($_GET['export']) && $_GET['export'] === '1') {
 
     $where = $clauses ? "WHERE " . implode(" AND ", $clauses) : '';
     $sql = "
-        SELECT c.complaint_id, c.category, c.description, c.status, c.sentiment, c.action_due, c.created_at, c.updated_at, c.attachment_path,
+        SELECT c.complaint_id, c.category, c.description, c.status, c.sentiment, c.action_due, c.created_at, c.updated_at, c.attachment_path, c.resolved_at,
                CONCAT(u.first_name, ' ', u.last_name) AS user_name, u.email AS user_email,
                s.name AS staff_name
         FROM complaints c
@@ -99,7 +99,7 @@ if (isset($_GET['export']) && $_GET['export'] === '1') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=complaints_export_' . date('Ymd_His') . '.csv');
     $out = fopen('php://output', 'w');
-    fputcsv($out, ['Complaint ID', 'Category', 'Description', 'Status', 'Sentiment', 'Action Due', 'Attachment', 'User Name', 'User Email', 'Assigned Staff', 'Created At', 'Updated At']);
+    fputcsv($out, ['Complaint ID', 'Category', 'Description', 'Status', 'Sentiment', 'Action Due', 'Resolved At', 'Attachment', 'User Name', 'User Email', 'Assigned Staff', 'Created At', 'Updated At']);
     while ($row = mysqli_fetch_assoc($res)) {
         fputcsv($out, [
             $row['complaint_id'],
@@ -108,6 +108,7 @@ if (isset($_GET['export']) && $_GET['export'] === '1') {
             $row['status'],
             $row['sentiment'] ?? '',
             $row['action_due'] ?? '',
+            $row['resolved_at'] ?? '',
             $row['attachment_path'] ?? '',
             $row['user_name'] ?? '',
             $row['user_email'] ?? '',
@@ -164,7 +165,7 @@ $total_pages = max(1, (int)ceil($total_rows / $per_page));
 
 // Fetch list
 $list_sql = "
-    SELECT c.complaint_id, c.category, c.description, c.status, c.sentiment, c.action_due, c.created_at, c.updated_at, c.attachment_path,
+    SELECT c.complaint_id, c.category, c.description, c.status, c.sentiment, c.action_due, c.created_at, c.updated_at, c.attachment_path, c.resolved_at,
            CONCAT(u.first_name, ' ', u.last_name) AS user_name, u.email AS user_email, u.profile_picture,
            s.name AS staff_name
     FROM complaints c
@@ -224,7 +225,7 @@ mysqli_stmt_close($stmt);
         .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
         .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .status-badge, .sentiment-badge { border-radius: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.75rem; font-weight: 600; border-width: 1px; }
+        .status-badge, .sentiment-badge, .resolved-badge { border-radius: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.75rem; font-weight: 600; border-width: 1px; }
         .avatar-glow { position: relative; cursor: pointer; }
         .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
         .avatar-glow:hover::before { opacity: 1; }
@@ -313,6 +314,25 @@ mysqli_stmt_close($stmt);
         /* Filters */
         .filter-group { transition: all 0.2s ease; }
         .filter-group:hover { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        /* Resolved Badge */
+        .resolved-badge {
+            background-color: #d1fae5;
+            color: #065f46;
+            border-color: #34d399;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-width: 1px;
+            border-radius: 0.5rem;
+        }
+        .resolved-badge .resolved-icon {
+            width: 1rem;
+            height: 1rem;
+            stroke: currentColor;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -349,6 +369,12 @@ mysqli_stmt_close($stmt);
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
                         </svg>
                         Manage Staff
+                    </a>
+                    <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                        </svg>
+                        Manage Users
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
@@ -440,153 +466,147 @@ mysqli_stmt_close($stmt);
                     </div>
                 </div>
 
-                    <!-- Complaints Cards -->
-                    <div class="card overflow-hidden">
-                        <div class="flex items-center justify-between p-6 border-b border-gray-200">
-                            <h2 class="text-lg font-semibold text-gray-900">All Complaints (<?php echo (int)$total_rows; ?>)</h2>
-                            <p class="text-xs text-gray-500">Showing <?php echo min($per_page, $total_rows - $offset); ?> of <?php echo $total_rows; ?> results</p>
-                        </div>
-                        <div class="p-6 space-y-4">
-                            <?php if ($total_rows === 0): ?>
-                                <div class="text-center py-12 text-gray-500">No complaints found. Start by monitoring new submissions.</div>
-                            <?php else: ?>
-                                <?php while ($row = mysqli_fetch_assoc($list_res)): ?>
-                                    <?php
-                                    $status_badge = 'bg-gray-100 text-gray-700';
-                                    if ($row['status'] === 'Pending') $status_badge = 'bg-yellow-50 text-yellow-700 border border-yellow-200';
-                                    if ($row['status'] === 'In Progress') $status_badge = 'bg-blue-50 text-blue-700 border border-blue-200';
-                                    if ($row['status'] === 'Resolved') $status_badge = 'bg-green-50 text-green-700 border border-green-200';
-                                    if ($row['status'] === 'Closed') $status_badge = 'bg-gray-100 text-gray-700 border border-gray-200';
+                <!-- Complaints Cards -->
+                <div class="card overflow-hidden">
+                    <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-gray-900">All Complaints (<?php echo (int)$total_rows; ?>)</h2>
+                        <p class="text-xs text-gray-500">Showing <?php echo min($per_page, $total_rows - $offset); ?> of <?php echo $total_rows; ?> results</p>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <?php if ($total_rows === 0): ?>
+                            <div class="text-center py-12 text-gray-500">No complaints found. Start by monitoring new submissions.</div>
+                        <?php else: ?>
+                            <?php while ($row = mysqli_fetch_assoc($list_res)): ?>
+                                <?php
+                                $status_badge = 'bg-gray-100 text-gray-700';
+                                if ($row['status'] === 'Pending') $status_badge = 'bg-yellow-50 text-yellow-700 border border-yellow-200';
+                                if ($row['status'] === 'In Progress') $status_badge = 'bg-blue-50 text-blue-700 border border-blue-200';
+                                if ($row['status'] === 'Resolved' || $row['status'] === 'Closed') $status_badge = 'bg-green-50 text-green-700 border border-green-200';
 
-                                    $sentiment_badge = 'bg-gray-50 text-gray-600 border border-gray-200';
-                                    if ($row['sentiment'] === 'Positive') $sentiment_badge = 'bg-green-50 text-green-700 border border-green-200';
-                                    if ($row['sentiment'] === 'Negative') $sentiment_badge = 'bg-red-50 text-red-700 border border-red-200';
+                                $sentiment_badge = 'bg-gray-50 text-gray-600 border border-gray-200';
+                                if ($row['sentiment'] === 'Positive') $sentiment_badge = 'bg-green-50 text-green-700 border border-green-200';
+                                if ($row['sentiment'] === 'Negative') $sentiment_badge = 'bg-red-50 text-red-700 border border-red-200';
 
-                                    // Dynamic Due Date Badge Logic (for Admin)
-                                    $due_display = '';
-                                    if ($row['action_due']): 
-                                        $current_date = date('Y-m-d'); // Current date (October 06, 2025 context)
-                                        $due_date = $row['action_due'];
-                                        $days_until_due = (strtotime($due_date) - strtotime($current_date)) / (60 * 60 * 24);
-                                        
-                                        $due_class = 'bg-green-50 text-green-700 border border-green-200'; // Default: Green
-                                        if ($days_until_due <= 0) {
-                                            $due_class = 'bg-red-50 text-red-700 border border-red-200 animate-pulse'; // Red + pulse if overdue
-                                        } elseif ($days_until_due <= 3) {
-                                            $due_class = 'bg-yellow-50 text-yellow-700 border border-yellow-200'; // Yellow if near
-                                        }
-                                        $due_display = '
-                                        <span class="status-badge inline-block ' . $due_class . ' px-2 py-1 text-xs font-medium flex items-center">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 mr-1 flex-shrink-0">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                                            </svg>
-                                            Due: ' . e(date('M d, Y', strtotime($due_date))) . '
-                                        </span>';
-                                    endif;
-                                    ?>
-                                    <div class="complaint-card">
-                                        <div class="complaint-header">
-                                            <div class="complaint-meta">
-                                                <div class="flex items-center space-x-2">
-                                                    <span class="font-mono text-sm font-semibold text-gray-700">#<?php echo (int)$row['complaint_id']; ?></span>
-                                                    <span class="status-badge inline-block <?php echo $status_badge; ?>"><?php echo e($row['status']); ?></span>
-                                                </div>
-                                                <!-- Category with SVG and Badge -->
-                                                <div class="flex items-center space-x-2 mt-1">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400 flex-shrink-0">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859M12 3v8.25m0 0-3-3m3 3 3-3" />
-                                                    </svg>
-                                                    <p class="text-sm font-medium text-gray-800"><?php echo e($row['category']); ?></p>
-                                                    <span class="status-badge bg-gray-50 text-gray-600 border border-gray-200 text-xs px-1 py-0.5">Category</span>
-                                                </div>
-                                                <!-- Customer Information with SVG -->
-                                                <div class="flex items-center space-x-2 mt-1">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400 flex-shrink-0">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                                    </svg>
-                                                    <img src="<?php echo e(get_avatar_src($row['profile_picture'], $row['user_name'] ?? 'User')); ?>" alt="User Avatar" class="w-6 h-6 rounded-full">
-                                                    <div>
-                                                        <p class="text-sm font-medium text-gray-900 flex items-center">
-                                                            <?php echo e($row['user_name'] ?? 'Anonymous'); ?>
-                                                            <?php if (!empty($row['user_name'])): ?>
-                                                                <span class="status-badge inline-block bg-green-50 text-green-700 border border-green-200 px-1 py-0.5 text-xs font-medium ml-1">Customer</span>
-                                                            <?php endif; ?>
-                                                        </p>
-                                                        <p class="text-xs text-gray-500"><?php echo e($row['user_email'] ?? 'N/A'); ?></p>
-                                                    </div>
-                                                </div>
+                                // Dynamic Due Date Badge Logic (for Admin)
+                                $due_display = '';
+                                if ($row['action_due']): 
+                                    $current_date = date('Y-m-d'); // Current date
+                                    $due_date = $row['action_due'];
+                                    $days_until_due = (strtotime($due_date) - strtotime($current_date)) / (60 * 60 * 24);
+                                    
+                                    $due_class = 'bg-green-50 text-green-700 border border-green-200'; // Default: Green
+                                    if ($days_until_due <= 0) {
+                                        $due_class = 'bg-red-50 text-red-700 border border-red-200 animate-pulse'; // Red + pulse if overdue
+                                    } elseif ($days_until_due <= 3) {
+                                        $due_class = 'bg-yellow-50 text-yellow-700 border border-yellow-200'; // Yellow if near
+                                    }
+                                    $due_display = '
+                                    <span class="status-badge inline-block ' . $due_class . ' px-2 py-1 text-xs font-medium flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 mr-1 flex-shrink-0">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                        </svg>
+                                        Due: ' . e(date('M d, Y', strtotime($due_date))) . '
+                                    </span>';
+                                endif;
+                                ?>
+                                <div class="complaint-card">
+                                    <div class="complaint-header">
+                                        <div class="complaint-meta">
+                                            <div class="flex items-center space-x-2">
+                                                <span class="font-mono text-sm font-semibold text-gray-700">#<?php echo (int)$row['complaint_id']; ?></span>
+                                                <span class="status-badge inline-block <?php echo $status_badge; ?>"><?php echo e($row['status']); ?></span>
                                             </div>
-                                            <div class="text-right">
-                                                <?php echo $due_display; ?>
-                                                <?php if (!empty($row['sentiment'])): ?>
-                                                    <span class="sentiment-badge inline-block <?php echo $sentiment_badge; ?>"><?php echo e($row['sentiment']); ?></span>
-                                                <?php endif; ?>
+                                            <!-- Category with SVG and Badge -->
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400 flex-shrink-0">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859M12 3v8.25m0 0-3-3m3 3 3-3" />
+                                                </svg>
+                                                <p class="text-sm font-medium text-gray-800"><?php echo e($row['category']); ?></p>
+                                                <span class="status-badge bg-gray-50 text-gray-600 border border-gray-200 text-xs px-1 py-0.5">Category</span>
+                                            </div>
+                                            <!-- Customer Information with SVG -->
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400 flex-shrink-0">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                </svg>
+                                                <img src="<?php echo e(get_avatar_src($row['profile_picture'], $row['user_name'] ?? 'User')); ?>" alt="User Avatar" class="w-6 h-6 rounded-full">
+                                                <div>
+                                                    <p class="text-sm font-medium text-gray-900 flex items-center">
+                                                        <?php echo e($row['user_name'] ?? 'Anonymous'); ?>
+                                                        <?php if (!empty($row['user_name'])): ?>
+                                                            <span class="status-badge inline-block bg-green-50 text-green-700 border border-green-200 px-1 py-0.5 text-xs font-medium ml-1">Customer</span>
+                                                        <?php endif; ?>
+                                                    </p>
+                                                    <p class="text-xs text-gray-500"><?php echo e($row['user_email'] ?? 'N/A'); ?></p>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div class="complaint-description" id="desc-<?php echo (int)$row['complaint_id']; ?>">
-                                            <?php echo e($row['description']); ?>
-                                        </div>
-                                        <?php if (strlen($row['description']) > 150): ?>
-                                            <button class="toggle-description" onclick="toggleDescription(<?php echo (int)$row['complaint_id']; ?>)">Read more</button>
-                                        <?php endif; ?>
-                                        <div class="complaint-footer">
-                                            <div class="flex flex-wrap gap-2">
-                                                <?php if (!empty($row['attachment_path'])): ?>
-                                                    <a href="../Uploads/complaints/<?php echo e($row['attachment_path']); ?>" target="_blank" class="text-blue-600 hover:text-blue-900 text-xs inline-flex items-center">
-                                                        <i class="fas fa-paperclip mr-1"></i>Attachment
-                                                    </a>
-                                                <?php endif; ?>
-                                                <?php if (!empty($row['staff_name'])): ?>
-                                                    <span class="text-xs text-gray-600">Assigned: <?php echo e($row['staff_name']); ?></span>
-                                                <?php else: ?>
-                                                    <span class="text-xs text-gray-400">Unassigned</span>
-                                                <?php endif; ?>
-                                                <span class="text-xs text-gray-500">Created: <?php echo e(date('M d, Y', strtotime($row['created_at']))); ?></span>
-                                                <span class="text-xs text-gray-500">Updated: <?php echo e(date('M d, Y', strtotime($row['updated_at']))); ?></span>
-                                            </div>
-                                            <div class="complaint-actions">
-                                                <a href="view_complaint.php?id=<?php echo (int)$row['complaint_id']; ?>" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                        <div class="text-right space-y-1">
+                                            <?php echo $due_display; ?>
+                                            <?php if (!empty($row['sentiment'])): ?>
+                                                <span class="sentiment-badge inline-block <?php echo $sentiment_badge; ?>"><?php echo e($row['sentiment']); ?></span>
+                                            <?php endif; ?>
+                                            <?php if (in_array($row['status'], ['Resolved', 'Closed']) && !empty($row['resolved_at'])): ?>
+                                                <span class="resolved-badge inline-block">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="resolved-icon">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                                                     </svg>
-                                                    View
-                                                </a>
-                                                <button onclick="openAssignModal(<?php echo (int)$row['complaint_id']; ?>)" class="bg-green-50 text-green-600 hover:bg-green-100 px-2 py-1 rounded">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline mr-1">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
-                                                    </svg>
-                                                    Assign
-                                                </button>
-                                                <button onclick="openStatusModal(<?php echo (int)$row['complaint_id']; ?>)" class="bg-yellow-50 text-yellow-600 hover:bg-yellow-100 px-2 py-1 rounded">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline mr-1">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                    </svg>
-                                                    Update
-                                                </button>
-                                            </div>
+                                                    Resolved on <?php echo e(date('M d, Y', strtotime($row['resolved_at']))); ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <!-- Debug: Check if this runs -->
+                                                <!-- <span class="text-red-500 text-xs">No resolved_at or wrong status</span> -->
+                                            <?php endif; ?>
                                         </div>
                                     </div>
-                                <?php endwhile; mysqli_stmt_close($list_stmt); ?>
-                            <?php endif; ?>
-                        </div>
-
-                        <!-- Pagination (rest remains the same) -->
-                        <?php if ($total_pages > 1): ?>
-                            <div class="p-6 border-t border-gray-200 bg-gray-50">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <?php
-                                    $qs = $_GET;
-                                    unset($qs['page']);
-                                    $base = 'manage_complaints.php?' . http_build_query($qs);
-                                    ?>
-                                    <a href="<?php echo $base . '&page=1'; ?>" class="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm <?php echo $page == 1 ? 'pointer-events-none opacity-50' : ''; ?>">« First</a>
-                                    <a href="<?php echo $base . '&page=' . max(1, $page - 1); ?>" class="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm <?php echo $page == 1 ? 'pointer-events-none opacity-50' : ''; ?>">‹ Prev</a>
-                                    <span class="text-sm text-gray-600">Page <?php echo $page; ?> of <?php echo $total_pages; ?></span>
-                                    <a href="<?php echo $base . '&page=' . min($total_pages, $page + 1); ?>" class="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm <?php echo $page == $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">Next ›</a>
-                                    <a href="<?php echo $base . '&page=' . $total_pages; ?>" class="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm <?php echo $page == $total_pages ? 'pointer-events-none opacity-50' : ''; ?>">Last »</a>
+                                    <div class="complaint-description" id="desc-<?php echo (int)$row['complaint_id']; ?>">
+                                        <?php echo e($row['description']); ?>
+                                    </div>
+                                    <?php if (strlen($row['description']) > 150): ?>
+                                        <button class="toggle-description" onclick="toggleDescription(<?php echo (int)$row['complaint_id']; ?>)">Read more</button>
+                                    <?php endif; ?>
+                                    <div class="complaint-footer">
+                                        <div class="flex flex-wrap gap-2">
+                                            <?php if (!empty($row['attachment_path'])): ?>
+                                                <a href="../Uploads/complaints/<?php echo e($row['attachment_path']); ?>" target="_blank" class="text-blue-600 hover:text-blue-900 text-xs inline-flex items-center">
+                                                    <i class="fas fa-paperclip mr-1"></i>Attachment
+                                                </a>
+                                            <?php endif; ?>
+                                            <?php if (!empty($row['staff_name'])): ?>
+                                                <span class="text-xs text-gray-600">Assigned: <?php echo e($row['staff_name']); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-xs text-gray-400">Unassigned</span>
+                                            <?php endif; ?>
+                                            <span class="text-xs text-gray-500">Created: <?php echo e(date('M d, Y', strtotime($row['created_at']))); ?></span>
+                                            <span class="text-xs text-gray-500">Updated: <?php echo e(date('M d, Y', strtotime($row['updated_at']))); ?></span>
+                                            <?php if (!empty($row['resolved_at'])): ?>
+                                                <span class="text-xs text-green-600">Resolved: <?php echo e(date('M d, Y', strtotime($row['resolved_at']))); ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="complaint-actions">
+                                            <a href="view_complaint.php?id=<?php echo (int)$row['complaint_id']; ?>" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                </svg>
+                                                View
+                                            </a>
+                                            <button onclick="openAssignModal(<?php echo (int)$row['complaint_id']; ?>)" class="bg-green-50 text-green-600 hover:bg-green-100 px-2 py-1 rounded">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline mr-1">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
+                                                </svg>
+                                                Assign
+                                            </button>
+                                            <button onclick="openStatusModal(<?php echo (int)$row['complaint_id']; ?>)" class="bg-yellow-50 text-yellow-600 hover:bg-yellow-100 px-2 py-1 rounded">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 inline mr-1">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                </svg>
+                                                Update
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            <?php endwhile; mysqli_stmt_close($list_stmt); ?>
                         <?php endif; ?>
                     </div>
 
@@ -662,11 +682,15 @@ mysqli_stmt_close($stmt);
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">New Status</label>
-                        <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" required>
+                        <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500" required onchange="toggleResolvedDate(this)">
                             <?php foreach ($ALLOWED_STATUSES as $s): ?>
                                 <option value="<?php echo e($s); ?>"><?php echo e($s); ?></option>
                             <?php endforeach; ?>
                         </select>
+                    </div>
+                    <div id="resolvedDateField" style="display: none;">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Date Resolved</label>
+                        <input type="datetime-local" name="resolved_at" class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Action Due Date (Optional)</label>
@@ -788,6 +812,16 @@ mysqli_stmt_close($stmt);
             document.getElementById('statusModal').classList.add('show');
         }
         function closeStatusModal() { document.getElementById('statusModal').classList.remove('show'); }
+
+        // Toggle Resolved Date Field
+        function toggleResolvedDate(select) {
+            const resolvedDateField = document.getElementById('resolvedDateField');
+            if (select.value === 'Resolved' || select.value === 'Closed') {
+                resolvedDateField.style.display = 'block';
+            } else {
+                resolvedDateField.style.display = 'none';
+            }
+        }
 
         // Close modals on outside click
         document.querySelectorAll('.modal').forEach(modal => {

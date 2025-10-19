@@ -1,4 +1,5 @@
 <?php
+session_name('AdminSession');
 session_start();
 include '../db/db.php'; // Adjust path if needed
 

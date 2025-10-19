@@ -1,4 +1,5 @@
 <?php
+session_name('AdminSession'); // Separate session for admins
 session_start();
 
 // Destroy the session

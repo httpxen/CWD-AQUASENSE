@@ -1,5 +1,6 @@
 <?php
 include '../db/db.php';
+session_name('CustomerSession');
 session_start();
 
 /**
@@ -9,6 +10,7 @@ session_start();
  * - List with filters, search, pagination
  * - CSV export
  * - KPIs (totals + avg resolution time)
+ * - History tab for complaint status changes
  * Security: prepared statements, CSRF token, HTML escaping
  */
 
@@ -380,6 +382,12 @@ $list_res = mysqli_stmt_get_result($list_stmt);
                                 </svg>
                                 View Complaints (<?php echo (int)$total_rows; ?>)
                             </button>
+                            <button id="historyTab" class="tab-btn border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm relative" data-tab="history" aria-selected="false">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1 inline">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                </svg>
+                                History
+                            </button>
                         </nav>
                     </div>
                     <!-- Submit Tab Content -->
@@ -391,6 +399,10 @@ $list_res = mysqli_stmt_get_result($list_stmt);
                     <!-- View Tab Content -->
                     <div id="viewTabContent" class="p-5 hidden">
                         <?php include 'includes/complaints.php'; ?>
+                    </div>
+                    <!-- History Tab Content -->
+                    <div id="historyTabContent" class="p-5 hidden">
+                        <?php include 'includes/history.php'; ?>
                     </div>
                 </section>
             </main>
