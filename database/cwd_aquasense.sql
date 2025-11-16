@@ -16,6 +16,7 @@ CREATE TABLE `users` (
   `middle_name` VARCHAR(50) DEFAULT NULL,
   `last_name` VARCHAR(50) NOT NULL,
   `email` VARCHAR(100) NOT NULL,
+  `contact_number` varchar(20) NOT NULL,
   `password` VARCHAR(255) NOT NULL,
   `reset_token` VARCHAR(255) DEFAULT NULL,
   `reset_token_expiry` DATETIME DEFAULT NULL,
@@ -42,9 +43,10 @@ CREATE TABLE `staff` (
   `name` VARCHAR(100) NOT NULL,
   `profile_picture` VARCHAR(255) DEFAULT NULL,
   `email` VARCHAR(100) NOT NULL,
-  `role` ENUM('Admin','Support','Manager') NOT NULL,
+  `role` ENUM('Admin','Employee','Manager') NOT NULL,
   `password` VARCHAR(255) NOT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login` datetime DEFAULT NULL,
   PRIMARY KEY (`staff_id`),
   UNIQUE KEY `email` (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -132,4 +134,126 @@ CREATE TABLE `reports` (
   PRIMARY KEY (`report_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- -- --------------------------------------------------------
+-- Table structure for table `people`
+-- -- --------------------------------------------------------
+
+CREATE TABLE `people` (
+  `person_id` int(11) NOT NULL,
+  `name` varchar(150) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `people`
+--
+
+INSERT INTO `people` (`person_id`, `name`, `created_at`) VALUES
+(1, 'Mr. Ronald J. Pua', '2025-11-03 08:13:47'),
+(2, 'Atty. Dante Manguiat', '2025-11-03 08:13:47'),
+(3, 'Mr. Aldrin Gamilla', '2025-11-03 08:13:47'),
+(4, 'Ms. Alicia V. Llamas', '2025-11-03 08:13:47'),
+(5, 'Bryan A. Ercia', '2025-11-03 08:13:47'),
+(6, 'Exequiel Aguilar Jr.', '2025-11-03 08:13:47'),
+(7, 'Edwin L. Cartago', '2025-11-03 08:13:47'),
+(8, 'Chona B. Santos', '2025-11-03 08:13:47'),
+(9, 'Ma. Carmela M. Elepano', '2025-11-03 08:13:47'),
+(10, 'Engr. Ranely S. Cartago', '2025-11-03 08:13:47'),
+(11, 'Engr. Joselito A. Gillera', '2025-11-03 08:13:47'),
+(12, 'Elenita V. Panganiban', '2025-11-03 08:13:47'),
+(13, 'Remedios L. Marfori', '2025-11-03 08:13:47'),
+(14, 'Emmanuel T. Salvador', '2025-11-03 08:13:47'),
+(15, 'Vacant', '2025-11-03 08:13:47'),
+(16, 'Mercedes A. Carreon', '2025-11-03 08:13:47'),
+(17, 'Elsa Gillera', '2025-11-03 08:13:47'),
+(18, 'Henry B. Junio', '2025-11-03 08:13:47'),
+(19, 'Ronnie G. Sierva', '2025-11-03 08:13:47'),
+(20, 'Engr. Rolando V. Baro', '2025-11-03 08:13:47'),
+(21, 'Engr. Elizaldy O. Novillos', '2025-11-03 08:13:47');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `positions`
+--
+
+CREATE TABLE `positions` (
+  `position_id` int(11) NOT NULL,
+  `title` varchar(100) NOT NULL,
+  `category` enum('board','management') NOT NULL,
+  `department` varchar(100) DEFAULT NULL,
+  `division` varchar(100) DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `order_index` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `positions`
+--
+
+INSERT INTO `positions` (`position_id`, `title`, `category`, `department`, `division`, `is_active`, `order_index`) VALUES
+(1, 'Chairperson', 'board', NULL, NULL, 1, 1),
+(2, 'Vice-Chairperson', 'board', NULL, NULL, 1, 2),
+(3, 'Corporate Secretary', 'board', NULL, NULL, 1, 3),
+(4, 'Treasurer', 'board', NULL, NULL, 1, 4),
+(5, 'P.R.O.', 'board', NULL, NULL, 1, 5),
+(6, 'General Manager', 'management', NULL, NULL, 1, 0),
+(7, 'Department Manager', 'management', 'Administrative', NULL, 1, 1),
+(8, 'Department Manager', 'management', 'Finance', NULL, 1, 2),
+(9, 'Department Manager', 'management', 'Commercial', NULL, 1, 3),
+(10, 'Department Manager', 'management', 'Technical Services', NULL, 1, 4),
+(11, 'Department Manager', 'management', 'Operations', NULL, 1, 5),
+(12, 'Division Manager', 'management', 'Customer Service Division A', 'Human Resource', 1, 1),
+(13, 'Division Manager', 'management', 'Customer Service Division A', 'Property & Materials Management', 1, 2),
+(14, 'Division Manager', 'management', 'Customer Service Division A', 'General Services', 1, 3),
+(15, 'Division Manager', 'management', 'Finance', 'General Accounting', 1, 1),
+(16, 'Division Manager', 'management', 'Finance', 'Budget', 1, 2),
+(17, 'OIC - Billing and Meter Reading', 'management', 'Commercial', NULL, 1, 1),
+(18, 'Division Manager', 'management', 'Commercial', 'Customer Accounts', 1, 2),
+(19, 'Division Manager', 'management', 'Commercial', 'Customer Care', 1, 3),
+(20, 'Division Manager', 'management', 'Technical Services', 'Pipeline and Appurtenance Maintenance', 1, 1),
+(21, 'Division Manager', 'management', 'Operations', 'Production', 1, 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `position_assignments`
+--
+
+CREATE TABLE `position_assignments` (
+  `assignment_id` int(11) NOT NULL,
+  `position_id` int(11) NOT NULL,
+  `person_id` int(11) NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date DEFAULT NULL,
+  `is_current` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `position_assignments`
+--
+
+INSERT INTO `position_assignments` (`assignment_id`, `position_id`, `person_id`, `start_date`, `end_date`, `is_current`, `created_at`) VALUES
+(1, 1, 1, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(2, 2, 2, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(3, 3, 3, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(4, 4, 4, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(5, 5, 5, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(6, 6, 6, '2023-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(7, 7, 7, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(8, 8, 8, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(9, 9, 9, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(10, 10, 10, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(11, 11, 11, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(12, 12, 12, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(13, 13, 13, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(14, 14, 14, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(15, 15, 15, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(16, 16, 16, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(17, 17, 17, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(18, 18, 18, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(19, 19, 19, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(20, 20, 20, '2020-01-01', NULL, 1, '2025-11-03 08:13:47'),
+(21, 21, 21, '2020-01-01', NULL, 1, '2025-11-03 08:13:47');
 COMMIT;

@@ -38,8 +38,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             // Role-based redirect (e.g., Admin to full dashboard)
             if ($row['role'] == 'Admin') {
                 header("Location: admin/dashboard.php");
-            } else {
-                header("Location: admin/support_dashboard.php"); // Para sa Support/Manager
+            } elseif ($row['role'] == 'Employee') {
+                header("Location: employees/dashboard.php");
+            } elseif ($row['role'] == 'Manager') {
+                header("Location: manager/dashboard.php");
             }
             exit();
         } else {

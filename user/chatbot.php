@@ -122,13 +122,6 @@ $stmt = null;
                             
                         </div>
                         <div class="flex items-center space-x-4">
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.16a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
-
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo e($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode(($user['first_name']??'').' '.($user['last_name']??''))); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
@@ -167,7 +160,7 @@ $stmt = null;
                 </div>
 
                 <!-- Chat Screen (Hidden Initially) -->
-                <div id="chatScreen" class="chat-container">
+                <div id="chatScreen" class="chat-container" style="display: none;">
                     <!-- Header -->
                     <header class="chat-header relative z-10">
                         <div class="flex items-center gap-3">
@@ -280,56 +273,38 @@ $stmt = null;
         function hideProfileDropdown() { profileDropdownMenu.classList.add('hidden'); }
         document.addEventListener('click', function() { hideProfileDropdown(); });
 
-        // Notification (placeholder)
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => { this.style.transform = 'scale(1)'; }, 150);
-            alert('Notifications feature coming soon! 🔔');
-        });
-
-        // Add loading animation to example buttons only
-        document.querySelectorAll('button').forEach(button => {
-            if (['mobileMenuToggle','notificationBtn'].includes(button.id)) return;
-            button.addEventListener('click', function() {
-                if (!this.classList.contains('loading')) {
-                    const originalText = this.innerHTML;
-                    this.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading...';
-                    this.classList.add('loading');
-                    setTimeout(() => { this.innerHTML = originalText; this.classList.remove('loading'); }, 1500);
-                }
-            });
-        });
-
         // Welcome Screen to Chat Transition
         document.getElementById('startSession').addEventListener('click', function() {
             document.getElementById('welcomeScreen').style.display = 'none';
             document.getElementById('chatScreen').style.display = 'flex';
-            // Trigger initial message animation
             setTimeout(() => {
                 const initialMsg = document.getElementById('initialMessage');
                 initialMsg.classList.add('animate');
             }, 300);
         });
 
-        // Chatbot Script with Quick Replies Support
+        // Chatbot Script with HTML Links Support
         document.addEventListener("DOMContentLoaded", () => {
             const chatMessages = document.getElementById("chatMessages");
             const chatInput = document.getElementById("chatInput");
             const chatSend = document.getElementById("chatSend");
 
-            // Quick sanity check
             if (!chatMessages || !chatInput || !chatSend) {
                 console.error("AquaSense: missing element(s)");
                 return;
             }
 
             let messageHistory = [];
+            let retryCount = 0;
+            const maxRetries = 3;
 
             function createMessageBubble(text, sender = "user") {
                 const div = document.createElement("div");
                 div.className = `chat-bubble ${sender} animate`;
-                div.textContent = text;
+                
+                // ALLOW HTML (safe because backend sanitized)
+                div.innerHTML = text;
+                
                 return div;
             }
 
@@ -338,12 +313,10 @@ $stmt = null;
                 container.className = `chat-bubble ${sender} animate`;
 
                 const messageDiv = document.createElement("div");
-                messageDiv.textContent = structured.message || structured.content || '';
+                messageDiv.innerHTML = structured.message || structured.content || '';
                 messageDiv.className = 'mb-2';
-
                 container.appendChild(messageDiv);
 
-                // Add quick reply buttons if present
                 if (structured.type === 'buttons' && structured.buttons && Array.isArray(structured.buttons)) {
                     const buttonsContainer = document.createElement("div");
                     buttonsContainer.className = 'flex flex-wrap gap-2 mt-2';
@@ -353,13 +326,12 @@ $stmt = null;
                         btn.textContent = btnText;
                         btn.onclick = () => {
                             sendUserMessage(btnText);
-                            buttonsContainer.remove(); // Remove buttons after selection
+                            buttonsContainer.remove();
                         };
                         buttonsContainer.appendChild(btn);
                     });
                     container.appendChild(buttonsContainer);
                 } else if (structured.type === 'confirm' && structured.buttons && Array.isArray(structured.buttons)) {
-                    // Similar to buttons
                     const buttonsContainer = document.createElement("div");
                     buttonsContainer.className = 'flex flex-wrap gap-2 mt-2 justify-center';
                     structured.buttons.forEach(btnText => {
@@ -377,7 +349,6 @@ $stmt = null;
                     });
                     container.appendChild(buttonsContainer);
                 } else if (structured.type === 'input') {
-                    // Just message, focus input
                     chatInput.focus();
                 } else if (structured.type === 'success' || structured.type === 'error') {
                     const statusDiv = document.createElement("div");
@@ -407,13 +378,11 @@ $stmt = null;
 
             function sendBotMessage(rawContent) {
                 try {
-                    // Try to parse as structured response
                     const structured = JSON.parse(rawContent);
                     const botBubble = createStructuredBubble(structured, "bot");
                     appendMessage(botBubble);
                     messageHistory.push({ role: "assistant", content: rawContent });
                 } catch (e) {
-                    // Normal text response
                     const botBubble = createMessageBubble(rawContent, "bot");
                     appendMessage(botBubble);
                     messageHistory.push({ role: "assistant", content: rawContent });
@@ -429,18 +398,22 @@ $stmt = null;
                 return el;
             }
 
-            let retryCount = 0;
-            const maxRetries = 3;
-
             async function attemptApiCall() {
                 const response = await fetch("chat.php", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    credentials: 'same-origin',
+                    headers: { 
+                        "Content-Type": "application/json"
+                    },
                     body: JSON.stringify({ messages: messageHistory })
                 });
 
-                const data = await response.json();
-                return data;
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errText}`);
+                }
+
+                return await response.json();
             }
 
             async function handleSendMessage() {
@@ -457,30 +430,30 @@ $stmt = null;
                     
                     while ((data.error && (data.error.includes('rate limit') || data.error.includes('429'))) && retryCount < maxRetries) {
                         retryCount++;
-                        const waitTime = Math.pow(2, retryCount) * 2500;  // 5s, 10s, 20s
-                        sendBotMessage(`⏳ Rate limit hit. Retrying in ${waitTime/1000}s... (Try ${retryCount}/${maxRetries})`);
+                        const waitTime = Math.pow(2, retryCount) * 2500;
+                        sendBotMessage(`Rate limit hit. Retrying in ${waitTime/1000}s... (${retryCount}/${maxRetries})`);
                         await new Promise(resolve => setTimeout(resolve, waitTime));
                         data = await attemptApiCall();
                     }
 
                     typingEl.remove();
 
-                    if (data.answer) {
-                        sendBotMessage(data.answer);
+                    if (data.response) {
+                        sendBotMessage(data.response);
                     } else if (data.error) {
-                        sendBotMessage(`⚠️ ${data.error}. Try again later!`);
-                        console.error(data);
+                        sendBotMessage(`Warning: ${data.error}`);
+                        console.error("API Error:", data);
                     } else {
-                        sendBotMessage("⚠️ No response from AI. Check PHP logs.");
-                        console.error(data);
+                        sendBotMessage("Warning: No response from AI.");
+                        console.error("Unexpected response:", data);
                     }
                 } catch (err) {
-                    console.error("AquaSense: OpenAI fetch error", err);
+                    console.error("Fetch error:", err);
                     typingEl.remove();
-                    sendBotMessage("⚠️ Error contacting server.");
+                    sendBotMessage("Warning: Could not connect to server.");
                 } finally {
                     chatSend.disabled = false;
-                    retryCount = 0;  // Reset for next message
+                    retryCount = 0;
                 }
             }
 
@@ -493,11 +466,9 @@ $stmt = null;
                 }
             });
 
-            // Add initial message
             const initialMsg = document.getElementById('initialMessage');
             appendMessage(initialMsg);
 
-            // Expose history for dev
             window.__AquaSense = { messageHistory };
         });
     </script>

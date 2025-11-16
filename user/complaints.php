@@ -10,7 +10,6 @@ session_start();
  * - List with filters, search, pagination
  * - CSV export
  * - KPIs (totals + avg resolution time)
- * - History tab for complaint status changes
  * Security: prepared statements, CSRF token, HTML escaping
  */
 
@@ -60,8 +59,13 @@ $ALLOWED_CATEGORIES = [
 ];
 $ALLOWED_STATUSES = ['Pending','In Progress','Resolved','Closed'];
 
-// -------- Handle Create Complaint (POST) --------
+// -------- FLASH MESSAGE FROM REDIRECT --------
 $flash = null;
+if (isset($_GET['success'])) {
+    $flash = ['type' => 'success', 'msg' => 'Your complaint has been submitted. You can track it below.'];
+}
+
+// -------- Handle Create Complaint (POST) --------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create') {
     $token = $_POST['csrf_token'] ?? '';
     if (!csrf_check($token)) {
@@ -102,10 +106,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $ins = mysqli_prepare($conn, $sql);
                 mysqli_stmt_bind_param($ins, "isss", $user_id, $category, $description, $attachment_path);
                 if (mysqli_stmt_execute($ins)) {
-                    $flash = ['type' => 'success', 'msg' => 'Your complaint has been submitted. You can track it below.'];
+                    mysqli_stmt_close($ins);
+                    // REDIRECT TO PREVENT RESUBMISSION
+                    header("Location: complaints.php?success=1");
+                    exit();
                 } else {
                     $flash = ['type' => 'error', 'msg' => 'Unable to save your complaint. Please try again.'];
-                    if ($attachment_path) {
+                    if ($attachment_path && file_exists($file_path)) {
                         unlink($file_path);
                     }
                 }
@@ -243,7 +250,7 @@ $list_sql = "
   ) ca ON ca.complaint_id = c.complaint_id
   LEFT JOIN staff s ON s.staff_id = ca.staff_id
   $where
-  ORDER BY c.complaint_id ASC
+  ORDER BY c.complaint_id DESC
   LIMIT ? OFFSET ?
 ";
 $list_stmt = mysqli_prepare($conn, $list_sql);
@@ -336,12 +343,6 @@ $list_res = mysqli_stmt_get_result($list_stmt);
                         <div class="flex items-center space-x-4">
                         </div>
                         <div class="flex items-center space-x-4">
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo e($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode(($user['first_name']??'').' '.($user['last_name']??''))); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
@@ -382,27 +383,15 @@ $list_res = mysqli_stmt_get_result($list_stmt);
                                 </svg>
                                 View Complaints (<?php echo (int)$total_rows; ?>)
                             </button>
-                            <button id="historyTab" class="tab-btn border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm relative" data-tab="history" aria-selected="false">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1 inline">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                                </svg>
-                                History
-                            </button>
                         </nav>
                     </div>
                     <!-- Submit Tab Content -->
                     <div id="submitTabContent" class="p-4">
-                        <?php if ($total_rows === 0): ?>
-                        <?php endif; ?>
                         <?php include 'includes/submit-complaint.php'; ?>
                     </div>
                     <!-- View Tab Content -->
                     <div id="viewTabContent" class="p-5 hidden">
                         <?php include 'includes/complaints.php'; ?>
-                    </div>
-                    <!-- History Tab Content -->
-                    <div id="historyTabContent" class="p-5 hidden">
-                        <?php include 'includes/history.php'; ?>
                     </div>
                 </section>
             </main>
@@ -414,21 +403,7 @@ $list_res = mysqli_stmt_get_result($list_stmt);
     </button>
     <!-- Profile Dropdown -->
     <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
-    <!-- Track Modal -->
-    <div id="trackModal" class="modal">
-        <div class="bg-white w-11/12 max-w-xl rounded-2xl p-5 shadow-2xl">
-            <div class="flex items-center justify-between mb-2">
-                <h3 class="text-base font-semibold text-gray-900">Track Complaint</h3>
-                <button onclick="closeTrackModal()" class="text-gray-500 hover:text-gray-800"><i class="fas fa-times"></i></button>
-            </div>
-            <div id="trackBody" class="space-y-2 text-sm text-gray-800">
-                <!-- Filled by JS -->
-            </div>
-            <div class="mt-4 text-right">
-                <button onclick="closeTrackModal()" class="px-4 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50">Close</button>
-            </div>
-        </div>
-    </div>
+
     <script>
         // Mobile menu toggle
         document.getElementById('mobileMenuToggle').addEventListener('click', function() {
@@ -436,11 +411,9 @@ $list_res = mysqli_stmt_get_result($list_stmt);
             sidebar.classList.toggle('-translate-x-full');
             sidebar.classList.toggle('translate-x-0');
         });
-        // Sidebar collapse on mobile
         if (window.innerWidth < 768) {
             document.querySelector('.sidebar').classList.add('-translate-x-full');
         }
-        // Responsive sidebar
         window.addEventListener('resize', function() {
             const sidebar = document.querySelector('.sidebar');
             if (window.innerWidth >= 768) {
@@ -451,7 +424,8 @@ $list_res = mysqli_stmt_get_result($list_stmt);
                 sidebar.classList.add('-translate-x-full');
             }
         });
-        // Profile dropdown functionality
+
+        // Profile dropdown
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
         profileDropdown.addEventListener('click', function(e) {
@@ -484,72 +458,17 @@ $list_res = mysqli_stmt_get_result($list_stmt);
             profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
         }
         function hideProfileDropdown() { profileDropdownMenu.classList.add('hidden'); }
-        document.addEventListener('click', function() { hideProfileDropdown(); });
-        // Notification (placeholder)
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => { this.style.transform = 'scale(1)'; }, 150);
-            alert('Notifications feature coming soon! 🔔');
-        });
-        // Track modal
-        function openTrackModal(id, data) {
-            const modal = document.getElementById('trackModal');
-            const body = document.getElementById('trackBody');
-            let attachmentHtml = '';
-            if (data.attachment_path) {
-                attachmentHtml = `
-                    <div class="mt-3">
-                        <span class="text-gray-500">Attachment</span>
-                        <div class="text-gray-900 font-medium">
-                            <a href="../Uploads/complaints/${escapeHtml(data.attachment_path)}" target="_blank" class="text-blue-600 hover:underline">
-                                <i class="fas fa-download mr-1"></i>View
-                            </a>
-                        </div>
-                    </div>
-                `;
-            }
-            body.innerHTML = `
-                <div class="grid grid-cols-2 gap-3">
-                    <div><span class="text-gray-500">Ticket #</span><div class="font-semibold text-gray-900">#${escapeHtml(String(data.id))}</div></div>
-                    <div><span class="text-gray-500">Status</span><div class="font-semibold">${escapeHtml(data.status || '—')}</div></div>
-                    <div><span class="text-gray-500">Category</span><div class="font-semibold">${escapeHtml(data.category || '—')}</div></div>
-                    <div><span class="text-gray-500">Assigned</span><div class="font-semibold">${escapeHtml(data.assigned || '—')}</div></div>
-                    <div><span class="text-gray-500">Action Due</span><div class="font-medium">${escapeHtml(data.action_due || '—')}</div></div>
-                    <div><span class="text-gray-500">Created</span><div class="font-medium">${escapeHtml(data.created_at || '—')}</div></div>
-                </div>
-                <div class="mt-3">
-                    <span class="text-gray-500">Description</span>
-                    <div class="text-gray-900 whitespace-pre-wrap border border-gray-100 rounded-xl p-3 bg-gray-50">${escapeHtml(data.description || '')}</div>
-                </div>
-                <div class="mt-3">
-                    <span class="text-gray-500">Sentiment</span>
-                    <div class="text-gray-900 font-medium">${escapeHtml(data.sentiment || 'N/A')}</div>
-                </div>
-                ${attachmentHtml}
-            `;
-            modal.classList.add('show');
-        }
-        function closeTrackModal() { document.getElementById('trackModal').classList.remove('show'); }
-        function escapeHtml(s) {
-            return String(s)
-              .replaceAll('&','&amp;')
-              .replaceAll('<','&lt;')
-              .replaceAll('>','&gt;')
-              .replaceAll('"','&quot;')
-              .replaceAll("'","&#039;");
-        }
+        document.addEventListener('click', hideProfileDropdown);
+
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const tab = this.dataset.tab;
-                // Close mobile sidebar if open
                 const sidebar = document.querySelector('.sidebar');
                 if (window.innerWidth < 768) {
                     sidebar.classList.add('-translate-x-full');
                     sidebar.classList.remove('translate-x-0');
                 }
-                // Update buttons
                 document.querySelectorAll('.tab-btn').forEach(b => {
                     b.setAttribute('aria-selected', 'false');
                     b.classList.remove('border-blue-500', 'text-blue-600');
@@ -558,15 +477,12 @@ $list_res = mysqli_stmt_get_result($list_stmt);
                 this.setAttribute('aria-selected', 'true');
                 this.classList.add('border-blue-500', 'text-blue-600');
                 this.classList.remove('border-transparent', 'text-gray-500');
-                // Switch content
                 document.querySelectorAll('[id$="TabContent"]').forEach(content => {
                     content.classList.add('hidden');
                 });
                 const targetContent = document.getElementById(tab + 'TabContent');
                 if (targetContent) {
                     targetContent.classList.remove('hidden');
-                } else {
-                    console.error(`Tab content for ${tab} not found`);
                 }
             });
         });
@@ -575,6 +491,6 @@ $list_res = mysqli_stmt_get_result($list_stmt);
 </html>
 <?php
 // Clean up
-mysqli_stmt_close($stmt);
+mysqli_stmt_close($list_stmt);
 mysqli_close($conn);
 ?>

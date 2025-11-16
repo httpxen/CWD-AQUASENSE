@@ -8,21 +8,36 @@ require_once __DIR__ . '/../config/env.php';
 class EmailService {
     private $mail;
     
-    public function __construct() {
+        public function __construct() {
         date_default_timezone_set('Asia/Manila');
         
         $this->mail = new PHPMailer(true);
         $this->mail->isSMTP();
-        $this->mail->Host       = $_ENV['SMTP_HOST'];
+        
+        // SMTP Settings
+        $this->mail->Host       = trim($_ENV['SMTP_HOST'] ?? 'smtp.gmail.com');
         $this->mail->SMTPAuth   = true;
-        $this->mail->Username   = $_ENV['SMTP_USERNAME'];
-        $this->mail->Password   = $_ENV['SMTP_PASSWORD'];
-        $this->mail->SMTPSecure = $_ENV['SMTP_ENCRYPTION'];
-        $this->mail->Port       = $_ENV['SMTP_PORT'];
-        
-        $this->mail->setFrom($_ENV['MAIL_FROM_ADDRESS'], $_ENV['MAIL_FROM_NAME']);
-        $this->mail->addReplyTo($_ENV['MAIL_REPLYTO'], $_ENV['MAIL_REPLYTO_NAME']);
-        
+        $this->mail->Username   = trim($_ENV['SMTP_USERNAME'] ?? '');
+        $this->mail->Password   = trim($_ENV['SMTP_PASSWORD'] ?? '');
+        $this->mail->SMTPSecure = trim($_ENV['SMTP_ENCRYPTION'] ?? 'tls');
+        $this->mail->Port       = (int)($_ENV['SMTP_PORT'] ?? 587);
+
+        // FROM EMAIL (SAFE)
+        $fromEmail = trim($_ENV['MAIL_FROM_ADDRESS'] ?? '');
+        $fromName  = trim($_ENV['MAIL_FROM_NAME'] ?? 'CWD AquaSense');
+
+        if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+            error_log("Invalid MAIL_FROM_ADDRESS in .env: '$fromEmail'. Using fallback.");
+            $fromEmail = 'no-reply@cwdaquasense.com';
+        }
+
+        $this->mail->setFrom($fromEmail, $fromName);
+
+        // REPLY-TO
+        $replyTo = trim($_ENV['MAIL_REPLYTO'] ?? $fromEmail);
+        $replyName = trim($_ENV['MAIL_REPLYTO_NAME'] ?? 'CWD Support');
+        $this->mail->addReplyTo($replyTo, $replyName);
+
         $this->mail->isHTML(true);
         $this->mail->CharSet = 'UTF-8';
     }
