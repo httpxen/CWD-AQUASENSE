@@ -43,6 +43,11 @@ if (!$staff) {
 }
 
 // ---------------------------
+// NOTIFICATIONS (Separate File)
+// ---------------------------
+include 'includes/notifications.php';
+
+// ---------------------------
 // Fetch dashboard stats
 // ---------------------------
 $total_complaints_query = "SELECT COUNT(*) as total FROM complaints WHERE status IN ('Pending', 'In Progress')";
@@ -85,7 +90,7 @@ $total_customers_result = mysqli_query($conn, $total_customers_query);
 if (!$total_customers_result) die("Query failed: " . mysqli_error($conn));
 $total_customers = mysqli_fetch_assoc($total_customers_result)['total'] ?? 0;
 
-// Fetch only latest 5 UNRESOLVED complaints (exclude Resolved and Closed ones)
+// Fetch only latest 5 UNRESOLVED complaints
 $recent_complaints_query = "SELECT c.complaint_id, c.category, c.description, c.status, c.created_at, CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.middle_name, ''), ' ', COALESCE(u.last_name, '')) as user_name 
                            FROM complaints c 
                            LEFT JOIN users u ON c.user_id = u.id 
@@ -155,7 +160,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
 
                 <!-- Navigation -->
                 <nav class="flex-1 py-2 px-4 space-y-2">
-                    <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 transition-all duration-200">
+                    <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 border border-blue-200 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="dashboard-icon mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
                         </svg>
@@ -181,7 +186,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                         </svg>
                         View Feedback
                     </a>
@@ -216,32 +221,69 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                     <div class="flex items-center justify-between">
                         <!-- Left: Clean & Minimal -->
                         <div class="flex items-center space-x-4">
-                            
                         </div>
-                        <!-- Right: Essential Actions Only -->
+                        <!-- Right: Essential Actions -->
                         <div class="flex items-center space-x-4">
-                            <!-- Notification Button -->
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
 
-                            <!-- Profile Dropdown - 2025 Style -->
+                            <!-- NOTIFICATION WITH DROPDOWN -->
+                            <div class="relative" id="notificationContainer">
+                                <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
+                                    </svg>
+                                    <?php if ($new_count > 0): ?>
+                                        <div class="notification-badge"><?php echo $new_count > 99 ? '99+' : $new_count; ?></div>
+                                    <?php endif; ?>
+                                </button>
+
+                                <!-- Dropdown -->
+                                <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+                                    <div class="px-4 py-3 border-b border-gray-100">
+                                        <h3 class="text-sm font-semibold text-gray-900">New Complaints</h3>
+                                        <p class="text-xs text-gray-500"><?php echo $new_count; ?> pending since your last login</p>
+                                    </div>
+                                    <div class="max-h-96 overflow-y-auto">
+                                        <?php if (empty($notifications)): ?>
+                                            <p class="text-center text-sm text-gray-500 py-8">No new complaints.</p>
+                                        <?php else: ?>
+                                            <?php foreach ($notifications as $n): ?>
+                                                <a href="manage_complaints.php?status=Pending" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                    <div class="flex items-start space-x-3">
+                                                        <div class="w-2 h-2 bg-red-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="text-sm font-medium text-gray-900 truncate">
+                                                                <?php echo htmlspecialchars($n['category']); ?>
+                                                            </p>
+                                                            <p class="text-xs text-gray-500">
+                                                                by <?php echo htmlspecialchars(trim($n['user_name']) ?: 'Anonymous'); ?>
+                                                            </p>
+                                                            <p class="text-xs text-gray-400">
+                                                                <?php echo date('M j, Y g:i A', strtotime($n['created_at'])); ?>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                                        <a href="manage_complaints.php?status=Pending" class="text-sm font-medium text-blue-600 hover:text-blue-800">
+                                            View all pending complaints
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Profile Dropdown -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
-                                <!-- Avatar with Glow Effect -->
                                 <div class="avatar-glow">
                                     <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
-                                    <!-- Online Status Ring -->
                                     <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                                 </div>
-                                <!-- User Info (Desktop Only) -->
                                 <div class="hidden md:block">
                                     <p class="text-sm font-semibold text-gray-900 truncate max-w-32"><?php echo htmlspecialchars($staff['name']); ?></p>
                                     <p class="text-xs text-gray-500 truncate max-w-32"><?php echo htmlspecialchars($staff['role']); ?></p>
                                 </div>
-                                <!-- Subtle Chevron -->
                                 <i class="fas fa-chevron-down text-gray-400 text-sm ml-1 transition-transform duration-200 group-hover:text-gray-600"></i>
                             </div>
                         </div>
@@ -293,7 +335,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                 <p class="text-3xl font-bold text-gray-900"><?php echo $in_progress_complaints; ?></p>
                             </div>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-blue-600">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 00 13.803-3.7M4.031 9.865a8.25 8.25 0 01 13.803-3.7l3.181 3.182m0-4.991v4.99" />
                             </svg>
                         </div>
                     </div>
@@ -326,7 +368,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                 <p class="text-3xl font-bold text-gray-900"><?php echo $total_feedback; ?></p>
                             </div>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-blue-500">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                             </svg>
                         </div>
                     </div>
@@ -366,13 +408,12 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <?php if (empty($recent_complaints)): ?>
                                         <tr>
-                                            <td colspan="5" class="px-6 py-4 text-center text-gray-500">No recent complaints.</td>
+                                            <td colspan="4" class="px-6 py-4 text-center text-gray-500">No recent complaints.</td>
                                         </tr>
                                     <?php else: ?>
                                         <?php foreach ($recent_complaints as $complaint): ?>
@@ -384,15 +425,12 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                                     <?php echo htmlspecialchars(trim($complaint['user_name']) ?: 'Anonymous'); ?>
                                                 </td>
                                                 <td class="px-6 py-4 whitespace-nowrap">
-                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $complaint['status'] === 'Pending' ? 'bg-yellow-100 text-yellow-800' : ($complaint['status'] === 'In Progress' ? 'bg-blue-100 text-blue-800' : ($complaint['status'] === 'Resolved' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800')); ?>">
+                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $complaint['status'] === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'; ?>">
                                                         <?php echo htmlspecialchars($complaint['status']); ?>
                                                     </span>
                                                 </td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                     <?php echo date('M j, Y', strtotime($complaint['created_at'])); ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <a href="view_complaint.php?id=<?php echo $complaint['complaint_id']; ?>" class="text-blue-600 hover:text-blue-900">View</a>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -420,7 +458,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                             <a href="view_feedback.php" class="block p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors">
                                 <div class="flex items-center">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-600 mr-3">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                                     </svg>
                                     <span class="text-sm font-medium text-gray-700">View Feedback</span>
                                 </div>
@@ -445,7 +483,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
         <i class="fas fa-bars text-lg"></i>
     </button>
 
-    <!-- Profile Dropdown -->
+    <!-- Profile Dropdown Menu -->
     <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
 
     <script>
@@ -456,104 +494,68 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
             sidebar.classList.toggle('translate-x-0');
         });
 
-        // Sidebar initial state on mobile
-        if (window.innerWidth < 768) {
-            document.querySelector('.sidebar').classList.add('-translate-x-full');
-        }
-
         // Responsive sidebar
         window.addEventListener('resize', function() {
             const sidebar = document.querySelector('.sidebar');
             if (window.innerWidth >= 768) {
                 sidebar.classList.remove('-translate-x-full');
-                sidebar.classList.add('translate-x-0');
             } else {
-                sidebar.classList.remove('translate-x-0');
                 sidebar.classList.add('-translate-x-full');
             }
         });
 
-        // Profile dropdown functionality
+        // Profile dropdown
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
         profileDropdown.addEventListener('click', function(e) {
             e.stopPropagation();
             if (profileDropdownMenu.classList.contains('hidden')) {
-                showProfileDropdown();
+                profileDropdownMenu.innerHTML = `
+                    <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        My Profile
+                    </a>
+                    <div class="border-t border-gray-100 my-1"></div>
+                    <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
+                        Sign Out
+                    </a>
+                `;
+                profileDropdownMenu.classList.remove('hidden');
+                const rect = profileDropdown.getBoundingClientRect();
+                profileDropdownMenu.style.right = '1.5rem';
+                profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
             } else {
-                hideProfileDropdown();
+                profileDropdownMenu.classList.add('hidden');
             }
         });
 
-        function showProfileDropdown() {
-            profileDropdownMenu.innerHTML = `
-                <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                    </svg>
-                    My Profile
-                </a>
-                <div class="border-t border-gray-100 my-1"></div>
-                <a href="admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
-                    </svg>
-                    Sign Out
-                </a>
-            `;
-            profileDropdownMenu.classList.remove('hidden');
-            
-            // Position the dropdown
-            const rect = profileDropdown.getBoundingClientRect();
-            profileDropdownMenu.style.right = '1.5rem';
-            profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
-        }
-
-        function hideProfileDropdown() {
-            profileDropdownMenu.classList.add('hidden');
-        }
-
-        // Close dropdown when clicking outside
         document.addEventListener('click', function() {
-            hideProfileDropdown();
+            profileDropdownMenu.classList.add('hidden');
         });
 
-        // Notification button
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
+        // Notification dropdown
+        const notificationBtn = document.getElementById('notificationBtn');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        const notificationContainer = document.getElementById('notificationContainer');
+
+        notificationBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                this.style.transform = 'scale(1)';
-            }, 150);
-            alert('Notifications feature coming soon! 🔔');
+            notificationDropdown.classList.toggle('hidden');
         });
 
-        // Add hover effects to profile dropdown
-        profileDropdown.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateY(-1px)';
-        });
-        profileDropdown.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateY(0)';
+        document.addEventListener('click', function(e) {
+            if (!notificationContainer.contains(e.target)) {
+                notificationDropdown.classList.add('hidden');
+            }
         });
 
-        // Add loading animation to buttons
-        document.querySelectorAll('button').forEach(button => {
-            button.addEventListener('click', function() {
-                if (!this.classList.contains('loading') && !this.id.includes('notificationBtn')) {
-                    const originalText = this.innerHTML;
-                    this.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading...';
-                    this.classList.add('loading');
-                    
-                    setTimeout(() => {
-                        this.innerHTML = originalText;
-                        this.classList.remove('loading');
-                    }, 1500);
-                }
-            });
-        });
-
-        // Auto-refresh every 2 minutes (120000 ms) to update recent complaints and remove resolved/closed ones
+        // Auto-refresh every 2 minutes
         setInterval(function() {
             location.reload();
         }, 120000);

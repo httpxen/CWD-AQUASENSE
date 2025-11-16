@@ -1,7 +1,9 @@
 <?php
-include 'session_check.php'; // Assumes database connection and session validation
+include 'session_check.php';
 
+// ---------------------------
 // Session timeout (30 minutes)
+// ---------------------------
 $timeout_duration = 1800;
 if (!isset($_SESSION['staff_id'])) {
     header("Location: login.php?message=Please log in to access the dashboard.");
@@ -17,13 +19,17 @@ $_SESSION['LAST_ACTIVITY'] = time();
 
 $staff_id = $_SESSION['staff_id'];
 
+// ---------------------------
 // CSRF token
+// ---------------------------
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
 
+// ---------------------------
 // Helpers
+// ---------------------------
 function sanitize($value) {
     return trim($value ?? '');
 }
@@ -35,9 +41,17 @@ function get_avatar_src($profile_picture, $name) {
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
 
+// ADD THIS FUNCTION: Format E.164 → Pretty Display
+function formatPhoneDisplay($e164) {
+    if (!$e164) return '—';
+    return preg_replace('/^\+63(\d{3})(\d{3})(\d{4})$/', '+63 $1 $2 $3', $e164);
+}
+
 $alerts = [];
 
+// ---------------------------
 // Fetch staff info
+// ---------------------------
 $staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
 $stmt = mysqli_prepare($conn, $staff_query);
 mysqli_stmt_bind_param($stmt, "i", $staff_id);
@@ -47,47 +61,73 @@ $staff = mysqli_fetch_assoc($result);
 if (!$staff) {
     session_unset();
     session_destroy();
-    header("Location: login.php?message=Account not found.");
+    header("Location: login.php?message=Account_account_not_found.");
     exit();
 }
+mysqli_stmt_close($stmt);
 
+// ---------------------------
 // Handle user deletion
+// ---------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_user') {
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
         $alerts[] = ['type' => 'error', 'msg' => 'Invalid CSRF token.'];
     } else {
-        $user_id = intval($_POST['user_id']);
-        $delete_query = "DELETE FROM users WHERE id = ?";
-        $stmt = mysqli_prepare($conn, $delete_query);
-        mysqli_stmt_bind_param($stmt, "i", $user_id);
-        if (mysqli_stmt_execute($stmt)) {
-            $alerts[] = ['type' => 'success', 'msg' => 'User deleted successfully.'];
+        $user_id = (int)($_POST['user_id'] ?? 0);
+        if ($user_id <= 0) {
+            $alerts[] = ['type' => 'error', 'msg' => 'Invalid user ID.'];
         } else {
-            $alerts[] = ['type' => 'error', 'msg' => 'Failed to delete user: ' . mysqli_error($conn)];
+            $delete_query = "DELETE FROM users WHERE id = ?";
+            $stmt = mysqli_prepare($conn, $delete_query);
+            mysqli_stmt_bind_param($stmt, "i", $user_id);
+            if (mysqli_stmt_execute($stmt)) {
+                $alerts[] = ['type' => 'success', 'msg' => 'User deleted successfully.'];
+            } else {
+                $alerts[] = ['type' => 'error', 'msg' => 'Failed to delete user.'];
+            }
+            mysqli_stmt_close($stmt);
         }
-        mysqli_stmt_close($stmt);
     }
 }
 
+// ---------------------------
 // Fetch users with pagination and search
+// ---------------------------
 $per_page = 10;
-$page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+$page = max(1, (int)($_GET['page'] ?? 1));
 $offset = ($page - 1) * $per_page;
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$where_clause = $search ? "WHERE username LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR email LIKE ?" : "";
-$search_param = $search ? "%$search%" : "";
+$search = trim($_GET['search'] ?? '');
 
-// Updated status logic: Active if last_login within 30 days or token_expiry is valid
-$users_query = "SELECT id, username, CONCAT(COALESCE(first_name, ''), ' ', COALESCE(middle_name, ''), ' ', COALESCE(last_name, '')) as full_name, email, profile_picture, created_at, 
-                CASE 
-                    WHEN last_login IS NOT NULL AND last_login >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'Active'
-                    WHEN token_expiry IS NOT NULL AND token_expiry > NOW() THEN 'Active'
-                    ELSE 'Inactive'
-                END as status 
-                FROM users $where_clause ORDER BY created_at DESC LIMIT ? OFFSET ?";
+// Build WHERE clause
+$where_clause = '';
+$search_params = [];
+if ($search !== '') {
+    $like = "%$search%";
+    $where_clause = "WHERE username LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR contact_number LIKE ?";
+    $search_params = [$like, $like, $like, $like, $like];
+}
+
+// Users query
+$users_query = "
+    SELECT 
+        id, username, 
+        CONCAT(COALESCE(first_name, ''), ' ', COALESCE(middle_name, ''), ' ', COALESCE(last_name, '')) as full_name, 
+        email, contact_number, profile_picture, created_at, last_login, token_expiry,
+        CASE 
+            WHEN last_login IS NOT NULL AND last_login >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'Active'
+            WHEN token_expiry IS NOT NULL AND token_expiry > NOW() THEN 'Active'
+            ELSE 'Inactive'
+        END as status 
+    FROM users $where_clause 
+    ORDER BY created_at DESC 
+    LIMIT ? OFFSET ?";
+
 $stmt = mysqli_prepare($conn, $users_query);
-if ($search) {
-    mysqli_stmt_bind_param($stmt, "ssssii", $search_param, $search_param, $search_param, $search_param, $per_page, $offset);
+if ($search !== '') {
+    $bind_types = str_repeat('s', count($search_params)) . 'ii';
+    $bind_refs = array_merge($search_params, [$per_page, $offset]);
+    array_unshift($bind_refs, $bind_types);
+    call_user_func_array([$stmt, 'bind_param'], $bind_refs);
 } else {
     mysqli_stmt_bind_param($stmt, "ii", $per_page, $offset);
 }
@@ -97,17 +137,22 @@ $users = [];
 while ($row = mysqli_fetch_assoc($users_result)) {
     $users[] = $row;
 }
+mysqli_stmt_close($stmt);
 
-// Get total users for pagination
+// Total count
 $total_query = "SELECT COUNT(*) as total FROM users $where_clause";
 $stmt = mysqli_prepare($conn, $total_query);
-if ($search) {
-    mysqli_stmt_bind_param($stmt, "ssss", $search_param, $search_param, $search_param, $search_param);
+if ($search !== '') {
+    $bind_types = str_repeat('s', count($search_params));
+    $bind_refs = array_merge($search_params);
+    array_unshift($bind_refs, $bind_types);
+    call_user_func_array([$stmt, 'bind_param'], $bind_refs);
 }
 mysqli_stmt_execute($stmt);
 $total_result = mysqli_stmt_get_result($stmt);
 $total_users = mysqli_fetch_assoc($total_result)['total'];
 $total_pages = ceil($total_users / $per_page);
+mysqli_stmt_close($stmt);
 ?>
 
 <!DOCTYPE html>
@@ -121,45 +166,40 @@ $total_pages = ceil($total_users / $per_page);
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .sidebar { transition: transform 0.3s ease-in-out; width: 260px; }
-        .card { background: linear-gradient(145deg, #ffffff, #f9fafb); border: 1px solid rgba(0,0,0,0.05); border-radius: 1.25rem; }
-        .btn-primary { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); color: white; transition: all 0.3s ease; }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 20px -4px rgba(0, 0, 0, 0.15); }
-        .status-badge { border-radius: 9999px; padding: 0.5rem 1rem; font-size: 0.75rem; font-weight: 500; }
-        .status-active { background: #dcfce7; color: #15803d; }
-        .status-inactive { background: #fee2e2; color: #b91c1c; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .sidebar { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); width: 256px; }
+        .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        .status { border-radius: 0.5rem; padding: 0.75rem 1rem; }
         .avatar-glow { position: relative; cursor: pointer; }
-        .avatar-glow::before { content: ''; position: absolute; inset: -3px; background: linear-gradient(45deg, #2563eb, #8b5cf6, #06b6d4, #2563eb); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
+        .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
         .avatar-glow:hover::before { opacity: 1; }
-        .notification-badge { position: absolute; top: -4px; right: -4px; background: linear-gradient(135deg, #ef4444, #b91c1c); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
-        .group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.3s ease; }
-        @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
-        .profile-card { transition: all 0.3s ease; }
-        .profile-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1); }
-        .header-2025 { backdrop-filter: blur(20px); background: rgba(255,255,255,0.9); border-bottom: 1px solid rgba(0,0,0,0.05); margin-left: 260px; width: calc(100% - 260px); }
-        main { margin-left: 260px; }
-        .search-input { transition: all 0.3s ease; }
-        .search-input:focus { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
-        .table-header:hover { background: #f1f5f9; cursor: pointer; }
+        .profile-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .profile-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08); }
+        .header-2025 { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.2); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); margin-left: 256px; width: calc(100% - 256px); }
+        html { scroll-behavior: smooth; }
+        main { margin-left: 256px; padding: 1.5rem; }
         @media (max-width: 767px) {
             .header-2025 { margin-left: 0; width: 100%; }
             main { margin-left: 0; }
             .sidebar { transform: translateX(-100%); }
             .sidebar.translate-x-0 { transform: translateX(0); }
         }
+        .modal { transition: opacity 0.3s ease; }
     </style>
 </head>
-<body class="bg-gray-100">
+<body class="bg-gray-50">
     <div class="min-h-screen flex">
-        <!-- Sidebar -->
-        <div class="sidebar w-64 bg-white shadow-xl fixed h-full z-30">
+        <!-- SIDEBAR -->
+        <div class="sidebar w-64 bg-white shadow-lg fixed h-full z-30">
             <div class="flex flex-col h-full">
                 <div class="p-6">
-                    <div class="flex items-center space-x-3">
+                    <div class="flex items-center space-x-3"> 
                         <img src="../assets/icons/AquaSense.png" alt="CWD AquaSense Logo" class="w-16 h-16 rounded-lg object-contain bg-white p-1 flex-shrink-0">
-                        <div>
+                        <div class="flex-1">
                             <h1 class="text-xl font-bold text-gray-900">AquaSense</h1>
                             <p class="text-xs text-gray-500">Admin Portal</p>
                         </div>
@@ -185,15 +225,15 @@ $total_pages = ceil($total_users / $per_page);
                         </svg>
                         Manage Staff
                     </a>
-                    <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 transition-all duration-200">
+                    <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 border border-blue-200 transition duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a2.375 2.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
                         </svg>
                         Manage Users
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 0 1 .778-.332 48.294 48.294 0 0 0 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                         </svg>
                         View Feedback
                     </a>
@@ -201,8 +241,8 @@ $total_pages = ceil($total_users / $per_page);
 
                 <div class="p-4 border-t border-gray-100">
                     <div class="flex items-center space-x-3 mb-4">
-                        <div class="avatar-glow">
-                            <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                        <div class="relative avatar-glow">
+                            <img src="<?php echo get_avatar_src($staff['profile_picture'], $staff['name']); ?>" alt="<?= htmlspecialchars($staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
                             <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                         </div>
                         <div>
@@ -223,26 +263,21 @@ $total_pages = ceil($total_users / $per_page);
         <!-- Main -->
         <div class="flex-1">
             <header class="header-2025 sticky top-0 z-20">
-                <div class="px-6 py-4 flex items-center justify-between">
-                    <div class="flex items-center space-x-4">
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                            </svg>
-                            <div class="notification-badge">3</div>
-                        </button>
-                        <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer" id="profileDropdown">
-                            <div class="avatar-glow">
-                                <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
-                                <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
+                <div class="px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-4"></div>
+                        <div class="flex items-center space-x-4">
+                            <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
+                                <div class="avatar-glow">
+                                    <img src="<?php echo get_avatar_src($staff['profile_picture'], $staff['name']); ?>" alt="<?= htmlspecialchars($staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
+                                    <div class="absolute - حساب -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
+                                </div>
+                                <div class="hidden md:block">
+                                    <p class="text-sm font-semibold text-gray-900 truncate max-w-32"><?php echo htmlspecialchars($staff['name']); ?></p>
+                                    <p class="text-xs text-gray-500 truncate max-w-32"><?php echo htmlspecialchars($staff['role']); ?></p>
+                                </div>
+                                <i class="fas fa-chevron-down text-gray-400 text-sm ml-1 transition-transform duration-200 group-hover:text-gray-600"></i>
                             </div>
-                            <div class="hidden md:block">
-                                <p class="text-sm font-semibold text-gray-900 truncate max-w-32"><?php echo htmlspecialchars($staff['name']); ?></p>
-                                <p class="text-xs text-gray-500 truncate max-w-32"><?php echo htmlspecialchars($staff['role']); ?></p>
-                            </div>
-                            <i class="fas fa-chevron-down text-gray-400 text-sm ml-1 transition-transform duration-200"></i>
                         </div>
                     </div>
                 </div>
@@ -252,9 +287,9 @@ $total_pages = ceil($total_users / $per_page);
                 <!-- Alerts -->
                 <?php if (!empty($alerts)): ?>
                     <?php foreach ($alerts as $a): ?>
-                        <div class="status-badge <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : ($a['type'] === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'); ?> rounded-lg p-4">
+                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'; ?> rounded-lg p-4">
                             <div class="flex items-start">
-                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : ($a['type'] === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-info'); ?>"></i>
+                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'; ?>"></i>
                                 <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
                             </div>
                         </div>
@@ -266,9 +301,9 @@ $total_pages = ceil($total_users / $per_page);
                     <div class="flex flex-col md:flex-row justify-between items-center mb-6">
                         <h2 class="text-lg font-semibold text-gray-900">Manage Users</h2>
                         <div class="flex items-center space-x-4 mt-4 md:mt-0">
-                            <form id="searchForm" action="manage_user.php" method="GET" class="relative flex items-center">
+                            <form id="searchForm" action="" method="GET" class="relative flex items-center">
                                 <input type="hidden" name="page" value="1">
-                                <input type="text" id="searchInput" name="search" class="search-input pl-10 pr-10 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search users..." value="<?php echo htmlspecialchars($search); ?>">
+                                <input type="text" id="searchInput" name="search" class="pl-10 pr-10 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64" placeholder="Search users..." value="<?php echo htmlspecialchars($search); ?>">
                                 <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
@@ -280,44 +315,51 @@ $total_pages = ceil($total_users / $per_page);
                                     </button>
                                 <?php endif; ?>
                             </form>
-                            <a href="add_user.php" class="btn-primary px-4 py-2 rounded-lg text-sm font-medium">Add New User</a>
+                            <a href="add_user.php" class="btn-primary flex items-center px-4 py-2 rounded-lg text-sm font-medium">
+                                <i class="fas fa-plus mr-2"></i>Add New User
+                            </a>
                         </div>
                     </div>
+
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider table-header">Avatar</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider table-header">Username</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider table-header">Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider table-header">Email</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider table-header">Status</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider table-header">Registered</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avatar</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact Number</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registered</th>
                                     <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 <?php if (empty($users)): ?>
                                     <tr>
-                                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">No users found.</td>
+                                        <td colspan="8" class="px-6 py-4 text-center text-gray-500">No users found.</td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($users as $user): ?>
-                                        <tr class="hover:bg-gray-50 transition-colors">
+                                        <tr class="hover:bg-gray-50">
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <img src="<?php echo htmlspecialchars(get_avatar_src($user['profile_picture'], $user['full_name'])); ?>" alt="Avatar" class="w-8 h-8 rounded-full object-cover"/>
+                                                <img src="<?php echo get_avatar_src($user['profile_picture'], $user['full_name']); ?>" alt="<?= htmlspecialchars($user['full_name'] ?: $user['username']) ?>'arvi" class="w-10 h-10 rounded-full object-cover">
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                 <?php echo htmlspecialchars($user['username']); ?>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                <?php echo htmlspecialchars(trim($user['full_name']) ?: 'Anonymous'); ?>
+                                                <?php echo htmlspecialchars(trim($user['full_name']) ?: '—'); ?>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 <?php echo htmlspecialchars($user['email']); ?>
                                             </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <?= formatPhoneDisplay($user['contact_number']) ?>
+                                            </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="status-badge <?php echo $user['status'] === 'Active' ? 'status-active' : 'status-inactive'; ?>">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $user['status'] === 'Active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
                                                     <?php echo $user['status']; ?>
                                                 </span>
                                             </td>
@@ -325,12 +367,16 @@ $total_pages = ceil($total_users / $per_page);
                                                 <?php echo date('M j, Y', strtotime($user['created_at'])); ?>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <a href="edit_user.php?id=<?php echo $user['id']; ?>" class="text-blue-600 hover:text-blue-900 mr-4">Edit</a>
-                                                <form action="manage_user.php" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this user?');">
+                                                <a href="edit_user.php?id=<?php echo $user['id']; ?>" class="text-blue-600 hover:text-blue-900 mr-3">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <form action="" method="POST" class="inline" onsubmit="return confirm('Delete this user? This cannot be undone.');">
                                                     <input type="hidden" name="action" value="delete_user">
                                                     <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
                                                     <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                    <button type="submit" class="text-red-600 hover:text-red-900">Delete</button>
+                                                    <button type="submit" class="text-red-600 hover:text-red-900">
+                                                       : <i class="fas fa-trash"></i>
+                                                    </button>
                                                 </form>
                                             </td>
                                         </tr>
@@ -339,21 +385,22 @@ $total_pages = ceil($total_users / $per_page);
                             </tbody>
                         </table>
                     </div>
+
                     <!-- Pagination -->
                     <?php if ($total_pages > 1): ?>
                         <div class="mt-6 flex justify-between items-center">
                             <div class="text-sm text-gray-500">
-                                Showing <?php echo count($users); ?> of <?php echo $total_users; ?> users
+                                Showing <?= count($users) ?> of <?= $total_users ?> users
                             </div>
                             <div class="flex space-x-2">
                                 <?php if ($page > 1): ?>
-                                    <a href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Previous</a>
+                                    <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Previous</a>
                                 <?php endif; ?>
                                 <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                                    <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>" class="px-4 py-2 text-sm font-medium <?php echo $i === $page ? 'text-white bg-blue-600' : 'text-gray-700 bg-white'; ?> border border-gray-300 rounded-lg hover:bg-gray-50"><?php echo $i; ?></a>
+                                    <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>" class="px-4 py-2 text-sm font-medium <?= $i === $page ? 'text-white bg-blue-600' : 'text-gray-700 bg-white' ?> border border-gray-300 rounded-lg hover:bg-gray-50"><?= $i ?></a>
                                 <?php endfor; ?>
                                 <?php if ($page < $total_pages): ?>
-                                    <a href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Next</a>
+                                    <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Next</a>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -373,19 +420,17 @@ $total_pages = ceil($total_users / $per_page);
 
     <script>
         // Mobile menu toggle
-        document.getElementById('mobileMenuToggle').addEventListener('click', () => {
+        document.getElementById('mobileMenuToggle').addEventListener('click', function() {
             const sidebar = document.querySelector('.sidebar');
             sidebar.classList.toggle('-translate-x-full');
             sidebar.classList.toggle('translate-x-0');
         });
 
-        // Sidebar initial state
         if (window.innerWidth < 768) {
             document.querySelector('.sidebar').classList.add('-translate-x-full');
         }
 
-        // Responsive sidebar
-        window.addEventListener('resize', () => {
+        window.addEventListener('resize', function() {
             const sidebar = document.querySelector('.sidebar');
             if (window.innerWidth >= 768) {
                 sidebar.classList.remove('-translate-x-full');
@@ -396,11 +441,10 @@ $total_pages = ceil($total_users / $per_page);
             }
         });
 
-        // Profile dropdown
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
-        profileDropdown.addEventListener('click', (e) => {
+        profileDropdown.addEventListener('click', function(e) {
             e.stopPropagation();
             if (profileDropdownMenu.classList.contains('hidden')) {
                 showProfileDropdown();
@@ -418,7 +462,7 @@ $total_pages = ceil($total_users / $per_page);
                     My Profile
                 </a>
                 <div class="border-t border-gray-100 my-1"></div>
-                <a href="logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
                     </svg>
@@ -437,67 +481,23 @@ $total_pages = ceil($total_users / $per_page);
 
         document.addEventListener('click', hideProfileDropdown);
 
-        // Notification button
-        document.getElementById('notificationBtn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            alert('Notifications feature coming soon! 🔔');
-        });
-
-        // Search functionality
-        document.getElementById('searchForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const searchValue = document.getElementById('searchInput').value.trim();
-            window.location.href = `?page=1&search=${encodeURIComponent(searchValue)}`;
-        });
-
-        // Clear search functionality
-        const clearSearchBtn = document.getElementById('clearSearch');
-        if (clearSearchBtn) {
-            clearSearchBtn.addEventListener('click', function() {
+        const clearSearch = document.getElementById('clearSearch');
+        if (clearSearch) {
+            clearSearch.addEventListener('click', () => {
                 window.location.href = '?page=1';
             });
         }
 
-        // Optional: Debounce search for better UX (uncomment to enable)
-        /*
-        let debounceTimeout;
-        document.getElementById('searchInput').addEventListener('input', function() {
-            clearTimeout(debounceTimeout);
-            const searchValue = this.value.trim();
-            debounceTimeout = setTimeout(() => {
-                window.location.href = `?page=1&search=${encodeURIComponent(searchValue)}`;
-            }, 500); // 500ms delay
-        });
-        */
-
-        // Table sorting (placeholder for future implementation)
-        document.querySelectorAll('.table-header').forEach(header => {
-            header.addEventListener('click', () => {
-                const column = header.textContent.toLowerCase();
-                alert(`Sorting by ${column} feature coming soon!`);
-            });
-        });
-
-        // Button loading animation
-        document.querySelectorAll('button').forEach(button => {
-            button.addEventListener('click', function() {
-                if (!this.classList.contains('loading') && !this.id.includes('notificationBtn') && this.id !== 'clearSearch') {
-                    const originalText = this.innerHTML;
-                    this.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading...';
-                    this.classList.add('loading');
-                    setTimeout(() => {
-                        this.innerHTML = originalText;
-                        this.classList.remove('loading');
-                    }, 1500);
-                }
-            });
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const val = this.value.trim();
+                window.location.href = `?page=1&search=${encodeURIComponent(val)}`;
+            }
         });
     </script>
 </body>
 </html>
 
 <?php
-// Cleanup
-if (isset($stmt)) { mysqli_stmt_close($stmt); }
 mysqli_close($conn);
 ?>

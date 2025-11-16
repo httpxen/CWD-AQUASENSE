@@ -1,11 +1,15 @@
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* === SIDEBAR === */
 .sidebar {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     width: 256px;
 }
-.card-hover { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.card-hover { 
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+}
 .card-hover:hover {
     transform: translateY(-4px);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
@@ -22,19 +26,30 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
-@keyframes fadeInUp { from {opacity:0; transform:translateY(20px);} to {opacity:1; transform:translateY(0);} }
-.fade-in-up { animation: fadeInUp 0.6s ease-out; }
+@keyframes fadeInUp { 
+    from {opacity:0; transform:translateY(20px);} 
+    to {opacity:1; transform:translateY(0);} 
+}
+.fade-in-up { 
+    animation: fadeInUp 0.6s ease-out; 
+}
 .chart-container {
     background: linear-gradient(145deg, #ffffff, #f8fafc);
     border-radius: 1rem;
     padding: 1.5rem;
     border: 1px solid rgba(0, 0, 0, 0.05);
 }
-.status-badge { transition: all 0.2s ease-in-out; }
-.status-badge:hover { transform: scale(1.05); }
-.dashboard-icon, .complaints-icon, .feedback-icon, .chatbot-icon, .profile-icon { width: 24px; height: 24px; }
+.status-badge { 
+    transition: all 0.2s ease-in-out; 
+}
+.status-badge:hover { 
+    transform: scale(1.05); 
+}
+.dashboard-icon, .complaints-icon, .feedback-icon, .chatbot-icon, .profile-icon { 
+    width: 24px; height: 24px; 
+}
 
-/* 2025 Header - Clean & Modern */
+/* === HEADER 2025 === */
 .header-2025 {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -45,7 +60,10 @@ body {
     width: calc(100% - 256px);
 }
 
-.avatar-glow { position: relative; }
+/* === AVATAR GLOW === */
+.avatar-glow { 
+    position: relative; 
+}
 .avatar-glow::before {
     content: '';
     position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
@@ -53,8 +71,11 @@ body {
     border-radius: 50%;
     z-index: -1; opacity: 0; transition: opacity 0.3s ease;
 }
-.avatar-glow:hover::before { opacity: 1; }
+.avatar-glow:hover::before { 
+    opacity: 1; 
+}
 
+/* === NOTIFICATION BADGE === */
 .notification-badge {
     position: absolute; top: -2px; right: -2px;
     background: linear-gradient(135deg, #ef4444, #dc2626);
@@ -63,21 +84,42 @@ body {
     font-weight: 600; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
 }
 
-.group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.2s ease; }
-@keyframes gentle-pulse { 0%,100%{opacity:1;} 50%{opacity:.5;} }
-.animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
-.profile-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-.profile-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(0,0,0,0.08); }
+/* === DROPDOWN ARROW === */
+.group:hover .fa-chevron-down { 
+    transform: rotate(180deg); 
+    transition: transform 0.2s ease; 
+}
+@keyframes gentle-pulse { 
+    0%,100%{opacity:1;} 50%{opacity:.5;} 
+}
+.animate-gentle-pulse { 
+    animation: gentle-pulse 2s infinite; 
+}
+.profile-card { 
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+}
+.profile-card:hover { 
+    transform: translateY(-1px); 
+    box-shadow: 0 4px 12px -2px rgba(0,0,0,0.08); 
+}
 
+/* === GRADIENT TEXT === */
 .gradient-text {
     background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #06b6d4 100%);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
 
-html { scroll-behavior: smooth; }
-main { margin-left: 256px; padding: 1.5rem; }
+html { 
+    scroll-behavior: smooth; 
+}
+main { 
+    margin-left: 256px; 
+    padding: 1.5rem; 
+}
 
-/* Reworked Welcome Screen Styles - Cleaner, Minimalist Design */
+/* ========================================
+   WELCOME SCREEN - CLEAN & MINIMALIST
+   ======================================== */
 .welcome-container {
     height: calc(100vh - 8rem);
     background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
@@ -89,16 +131,13 @@ main { margin-left: 256px; padding: 1.5rem; }
     position: relative;
     overflow: hidden;
     border-radius: 1.5rem;
-    box-shadow: 9999px 20px 40px rgba(6, 182, 212, 0.15);
+    box-shadow: 0 20px 40px rgba(6, 182, 212, 0.15);
     padding: 2rem;
 }
 .welcome-container::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    top: 0; left: 0; right: 0; bottom: 0;
     background: radial-gradient(circle at 20% 80%, rgba(6, 182, 212, 0.1) 0%, transparent 50%),
                 radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
     pointer-events: none;
@@ -183,7 +222,9 @@ main { margin-left: 256px; padding: 1.5rem; }
     margin-right: 0.25rem;
 }
 
-/* Chat Styles - Enhanced for Better Flow */
+/* ========================================
+   CHAT CONTAINER - MODERN & RESPONSIVE
+   ======================================== */
 .chat-container {
     display: none;
     flex-direction: column;
@@ -291,7 +332,7 @@ main { margin-left: 256px; padding: 1.5rem; }
 }
 #chatSend {
     display: inline-flex;
-    align-items: center;
+    align-items: center;   /* Fixed: :: → : */
     justify-content: center;
     padding: 0.75rem 1rem;
     border: none;
@@ -335,12 +376,8 @@ main { margin-left: 256px; padding: 1.5rem; }
     border-radius: 50%;
     animation: typing 1.4s infinite ease-in-out;
 }
-.typing-dots span:nth-child(2) {
-    animation-delay: 0.2s;
-}
-.typing-dots span:nth-child(3) {
-    animation-delay: 0.4s;
-}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 @keyframes typing {
     0%, 60%, 100% { transform: translateY(0); }
     30% { transform: translateY(-8px); }
@@ -369,11 +406,194 @@ main { margin-left: 256px; padding: 1.5rem; }
     background: rgba(255, 255, 255, 0.1);
     transform: scale(1.1);
 }
+
+/* ========================================
+   COMPLAINT CARD - PROFESSIONAL & STATUS-AWARE
+   ======================================== */
+.complaint-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1rem;
+    margin: 1rem 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    max-width: 100%;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.complaint-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.complaint-header {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.complaint-header em {
+    font-size: 0.8rem;
+    color: #6b7280;
+    font-style: italic;
+}
+
+/* === COMPLAINT BODY - BETTER ALIGNMENT & SPACING === */
+.complaint-body p {
+    margin: 0.4rem 0;
+    color: #4b5563;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.complaint-body p strong {
+    color: #1f2937;
+    margin-right: 0.5rem;
+    min-width: 100px;
+    font-weight: 600;
+}
+
+/* Highlight assigned name */
+.complaint-body p .text-blue-700 {
+    font-weight: 600;
+}
+
+/* "Not yet assigned" style */
+.complaint-body p em.text-gray-500 {
+    font-style: italic;
+    color: #6b7280;
+}
+
+.complaint-description {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #e5e7eb;
+}
+
+.complaint-description p {
+    margin: 0.4rem 0;
+}
+
+.description-text {
+    background: #f9fafb;
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-style: italic;
+    color: #374151;
+    border-left: 4px solid #06b6d4;
+    margin-top: 0.5rem;
+}
+
+/* ========================================
+   STATUS BADGES WITH ICONS (Pure CSS)
+   ======================================== */
+.status-pending { 
+    background-color: #fef9c3; /* bg-yellow-100 */
+    color: #92400e;            /* text-yellow-800 */
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.status-in_progress { 
+    background-color: #dbeafe; /* bg-blue-100 */
+    color: #1e40af;            /* text-blue-800 */
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.status-resolved { 
+    background-color: #d1fae5; /* bg-green-100 */
+    color: #166534;            /* text-green-800 */
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.status-closed { 
+    background-color: #f3f4f6; /* bg-gray-100 */
+    color: #374151;            /* text-gray-800 */
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+/* Icon inside badge */
+.complaint-card .inline-flex i {
+    font-size: 0.75rem;
+    margin-right: 0.25rem;
+}
+
+/* Font Awesome Icons */
+.fa-clock { color: #d97706; }
+.fa-cogs { color: #2563eb; }
+.fa-check-circle { color: #16a34a; }
+.fa-lock { color: #6b7280; }
+
+/* ========================================
+   RESPONSIVE ADJUSTMENTS
+   ======================================== */
 @media (max-width: 767px) {
-    .header-2025 { margin-left: 0; width: 100%; }
-    main { margin-left: 0; }
-    .sidebar { transform: translateX(-100%); }
-    .sidebar.translate-x-0 { transform: translateX(0); }
-    .welcome-container, .chat-container { height: calc(100vh - 6rem); border-radius: 1rem; padding: 1rem; }
-    .character-img { width: 250px; height: 350px; }
+    .header-2025 { 
+        margin-left: 0; 
+        width: 100%; 
+    }
+    main { 
+        margin-left: 0; 
+    }
+    .sidebar { 
+        transform: translateX(-100%); 
+    }
+    .sidebar.translate-x-0 { 
+        transform: translateX(0); 
+    }
+    .welcome-container, .chat-container { 
+        height: calc(100vh - 6rem); 
+        border-radius: 1rem; 
+        padding: 1rem; 
+    }
+    .character-img { 
+        width: 250px; 
+        height: 350px; 
+    }
+    .complaint-card {
+        padding: 0.75rem;
+        font-size: 0.9rem;
+    }
+    .complaint-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    .complaint-body p {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.1rem;
+    }
+    .complaint-body p strong {
+        min-width: auto;
+    }
 }

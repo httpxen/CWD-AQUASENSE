@@ -283,15 +283,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <!-- Right: Essential Actions Only -->
                         <div class="flex items-center space-x-4">
-                            <!-- Notification Button -->
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
 
-                            <!-- Profile Dropdown - 2025 Style -->
+                            <!-- Profile Dropdown -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <!-- Avatar with Glow Effect -->
                                 <div class="avatar-glow" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
@@ -518,16 +511,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Close dropdown when clicking outside
         document.addEventListener('click', function() {
             hideProfileDropdown();
-        });
-
-        // Notification button
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                this.style.transform = 'scale(1)';
-            }, 150);
-            alert('Notifications feature coming soon! 🔔');
         });
 
         // Add hover effects to profile dropdown

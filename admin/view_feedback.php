@@ -1,7 +1,9 @@
 <?php
 include 'session_check.php';
 
+// ---------------------------
 // Session timeout (30 minutes)
+// ---------------------------
 $timeout_duration = 1800;
 if (!isset($_SESSION['staff_id'])) {
     header("Location: login.php?message=Please log in to access the feedback page.");
@@ -17,27 +19,33 @@ $_SESSION['LAST_ACTIVITY'] = time();
 
 $staff_id = $_SESSION['staff_id'];
 
+// ---------------------------
 // CSRF token
+// ---------------------------
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
 
+// ---------------------------
 // Helpers
+// ---------------------------
 function sanitize($value) {
     return trim($value ?? '');
 }
 
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) {
-        return '../' . $profile_picture; // Adjust for admin/ subfolder
+        return '../' . htmlspecialchars($profile_picture);
     }
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
 
-$alerts = []; // [ ['type' => 'success'|'error'|'info', 'msg' => '...'] ]
+$alerts = [];
 
+// ---------------------------
 // Fetch staff info
+// ---------------------------
 $staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
 $stmt = mysqli_prepare($conn, $staff_query);
 mysqli_stmt_bind_param($stmt, "i", $staff_id);
@@ -50,40 +58,54 @@ if (!$staff) {
     header("Location: login.php?message=Account not found.");
     exit();
 }
+mysqli_stmt_close($stmt);
 
+// ---------------------------
 // Pagination setup
+// ---------------------------
 $per_page = 12;
-$current_page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$current_page = max(1, (int)($_GET['page'] ?? 1));
 $offset = ($current_page - 1) * $per_page;
 
-// Fetch total unique users with feedback for pagination
+// ---------------------------
+// Fetch total unique users with feedback
+// ---------------------------
 $total_query = "SELECT COUNT(DISTINCT u.id) as total FROM users u JOIN feedback f ON u.id = f.user_id";
 $total_result = mysqli_query($conn, $total_query);
 $total_row = mysqli_fetch_assoc($total_result);
 $total_users = $total_row['total'];
 $total_pages = ceil($total_users / $per_page);
 
+// ---------------------------
 // Fetch paginated unique users with feedback
+// ---------------------------
 $user_query = "SELECT DISTINCT u.id, u.first_name, u.middle_name, u.last_name, u.profile_picture 
                FROM users u 
                JOIN feedback f ON u.id = f.user_id 
                ORDER BY u.last_name, u.first_name
-               LIMIT $offset, $per_page";
-$user_result = mysqli_query($conn, $user_query);
+               LIMIT ?, ?";
+$stmt = mysqli_prepare($conn, $user_query);
+mysqli_stmt_bind_param($stmt, "ii", $offset, $per_page);
+mysqli_stmt_execute($stmt);
+$user_result = mysqli_stmt_get_result($stmt);
 $users = [];
 while ($row = mysqli_fetch_assoc($user_result)) {
     $users[] = $row;
 }
+mysqli_stmt_close($stmt);
 
-// Fetch feedback for selected user (if any)
+// ---------------------------
+// Fetch feedback for selected user
+// ---------------------------
 $selected_user_id = isset($_GET['user_id']) ? (int)$_GET['user_id'] : null;
 $feedbacks = [];
 if ($selected_user_id) {
-    $feedback_query = "SELECT f.feedback_id, f.feedback_text, f.sentiment, f.created_at, CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.middle_name, ''), ' ', COALESCE(u.last_name, '')) as user_name 
-                      FROM feedback f 
-                      LEFT JOIN users u ON f.user_id = u.id 
-                      WHERE f.user_id = ? 
-                      ORDER BY f.created_at DESC";
+    $feedback_query = "SELECT f.feedback_id, f.feedback_text, f.sentiment, f.created_at, 
+                       CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.middle_name, ''), ' ', COALESCE(u.last_name, '')) as user_name 
+                       FROM feedback f 
+                       LEFT JOIN users u ON f.user_id = u.id 
+                       WHERE f.user_id = ? 
+                       ORDER BY f.created_at DESC";
     $stmt = mysqli_prepare($conn, $feedback_query);
     mysqli_stmt_bind_param($stmt, "i", $selected_user_id);
     mysqli_stmt_execute($stmt);
@@ -91,6 +113,7 @@ if ($selected_user_id) {
     while ($row = mysqli_fetch_assoc($feedback_result)) {
         $feedbacks[] = $row;
     }
+    mysqli_stmt_close($stmt);
 }
 ?>
 
@@ -110,17 +133,13 @@ if ($selected_user_id) {
         .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
         .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .status { border-radius: 0.5rem; padding: 0.75rem 1rem; }
         .avatar-glow { position: relative; cursor: pointer; }
         .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
         .avatar-glow:hover::before { opacity: 1; }
-        .notification-badge { position: absolute; top: -2px; right: -2px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); }
-        .group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.2s ease; }
         @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
         .profile-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
         .profile-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08); }
-        .dashboard-icon, .complaints-icon, .feedback-icon, .profile-icon { width: 24px; height: 24px; }
         .header-2025 { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.2); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); margin-left: 256px; width: calc(100% - 256px); }
         html { scroll-behavior: smooth; }
         main { margin-left: 256px; padding: 1.5rem; }
@@ -131,11 +150,13 @@ if ($selected_user_id) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.translate-x-0 { transform: translateX(0); }
         }
+        .user-card { transition: all 0.2s ease; }
+        .user-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.1); }
     </style>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
-        <!-- Sidebar -->
+        <!-- SIDEBAR — EXACT COPY FROM manage_user.php (ACTIVE: View Feedback) -->
         <div class="sidebar w-64 bg-white shadow-lg fixed h-full z-30">
             <div class="flex flex-col h-full">
                 <div class="p-6">
@@ -151,32 +172,32 @@ if ($selected_user_id) {
                 <!-- Navigation -->
                 <nav class="flex-1 py-2 px-4 space-y-2">
                     <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="dashboard-icon mr-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
                         </svg>
                         Dashboard
                     </a>
                     <a href="manage_complaints.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="complaints-icon mr-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                         </svg>
                         Manage Complaints
                     </a>
                     <a href="manage_staff.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="profile-icon mr-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
                         </svg>
                         Manage Staff
                     </a>
                     <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="profile-icon mr-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
                         </svg>
                         Manage Users
                     </a>
-                    <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 transition-all duration-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                    <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 border border-blue-200 transition duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 0 1 .778-.332 48.294 48.294 0 0 0 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                         </svg>
                         View Feedback
                     </a>
@@ -186,7 +207,7 @@ if ($selected_user_id) {
                 <div class="p-4 border-t border-gray-100">
                     <div class="flex items-center space-x-3 mb-4">
                         <div class="relative avatar-glow">
-                            <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                            <img src="<?php echo get_avatar_src($staff['profile_picture'], $staff['name']); ?>" alt="<?= htmlspecialchars($staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
                             <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                         </div>
                         <div>
@@ -203,25 +224,18 @@ if ($selected_user_id) {
                 </div>
             </div>
         </div>
+        <!-- END OF SIDEBAR -->
 
         <!-- Main -->
         <div class="flex-1">
             <header class="header-2025 sticky top-0 z-20">
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-4"></div>
                         <div class="flex items-center space-x-4">
-                            
-                        </div>
-                        <div class="flex items-center space-x-4">
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
-                                    <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                                    <img src="<?php echo get_avatar_src($staff['profile_picture'], $staff['name']); ?>" alt="<?= htmlspecialchars($staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
                                     <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                                 </div>
                                 <div class="hidden md:block">
@@ -239,9 +253,9 @@ if ($selected_user_id) {
                 <!-- Alerts -->
                 <?php if (!empty($alerts)): ?>
                     <?php foreach ($alerts as $a): ?>
-                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : ($a['type'] === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'); ?>">
+                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'; ?> rounded-lg p-4">
                             <div class="flex items-start">
-                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : ($a['type'] === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-info'); ?>"></i>
+                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'; ?>"></i>
                                 <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
                             </div>
                         </div>
@@ -249,17 +263,19 @@ if ($selected_user_id) {
                 <?php endif; ?>
 
                 <!-- User Cards -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     <?php if (empty($users)): ?>
-                        <p class="col-span-full text-center text-gray-500">No users with feedback found.</p>
+                        <p class="col-span-full text-center text-gray-500 py-8">No users with feedback found.</p>
                     <?php else: ?>
-                        <?php foreach ($users as $user): ?>
-                            <a href="?page=<?php echo $current_page; ?>&user_id=<?php echo $user['id']; ?>" class="card p-4 flex items-center space-x-4 hover:shadow-md transition-shadow" data-user-id="<?php echo $user['id']; ?>">
+                        <?php foreach ($users as $user): 
+                            $full_name = trim($user['first_name'] . ' ' . ($user['middle_name'] ? $user['middle_name'] . ' ' : '') . $user['last_name']);
+                        ?>
+                            <a href="?page=<?= $current_page ?>&user_id=<?= $user['id'] ?>" class="user-card card p-4 flex items-center space-x-4 hover:shadow-lg transition-all cursor-pointer">
                                 <div class="avatar-glow">
-                                    <img src="<?php echo htmlspecialchars(get_avatar_src($user['profile_picture'], $user['first_name'] . ' ' . $user['last_name'])); ?>" alt="User Avatar" class="w-12 h-12 rounded-full object-cover">
+                                    <img src="<?php echo get_avatar_src($user['profile_picture'], $full_name); ?>" alt="<?= htmlspecialchars($full_name) ?>'s avatar" class="w-14 h-14 rounded-full object-cover">
                                 </div>
-                                <div>
-                                    <h3 class="text-sm font-semibold text-gray-900"><?php echo htmlspecialchars($user['first_name'] . ' ' . ($user['middle_name'] ? $user['middle_name'] . ' ' : '') . $user['last_name']); ?></h3>
+                                <div class="flex-1 min-w-0">
+                                    <h3 class="text-sm font-semibold text-gray-900 truncate"><?= htmlspecialchars($full_name) ?></h3>
                                     <p class="text-xs text-gray-500">Click to view feedback</p>
                                 </div>
                             </a>
@@ -267,27 +283,32 @@ if ($selected_user_id) {
                     <?php endif; ?>
                 </div>
 
-                <!-- Pagination Links -->
+                <!-- Pagination -->
                 <?php if ($total_pages > 1): ?>
-                    <div class="flex justify-center items-center space-x-2 mt-4">
+                    <div class="flex justify-center items-center space-x-2 mt-8">
                         <?php if ($current_page > 1): ?>
-                            <a href="?page=<?php echo $current_page - 1; ?>" class="px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50">Previous</a>
+                            <a href="?page=<?= $current_page - 1 ?><?php if ($selected_user_id): ?>&user_id=<?= $selected_user_id ?><?php endif; ?>" class="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors">Previous</a>
                         <?php endif; ?>
-                        <?php for ($i = 1; $i <= $total_pages; $i++): ?>
-                            <a href="?page=<?php echo $i; ?>" class="px-4 py-2 text-sm <?php echo $i === $current_page ? 'bg-blue-600 text-white' : 'text-blue-600 border border-blue-200 hover:bg-blue-50'; ?> rounded"><?php echo $i; ?></a>
+                        <?php 
+                        $start = max(1, $current_page - 2);
+                        $end = min($total_pages, $current_page + 2);
+                        for ($i = $start; $i <= $end; $i++): ?>
+                            <a href="?page=<?= $i ?><?php if ($selected_user_id): ?>&user_id=<?= $selected_user_id ?><?php endif; ?>" class="px-4 py-2 text-sm font-medium <?= $i === $current_page ? 'bg-blue-600 text-white' : 'text-blue-600 border border-blue-200 hover:bg-blue-50' ?> rounded-lg transition-colors"><?= $i ?></a>
                         <?php endfor; ?>
                         <?php if ($current_page < $total_pages): ?>
-                            <a href="?page=<?php echo $current_page + 1; ?>" class="px-4 py-2 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50">Next</a>
+                            <a href="?page=<?= $current_page + 1 ?><?php if ($selected_user_id): ?>&user_id=<?= $selected_user_id ?><?php endif; ?>" class="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors">Next</a>
                         <?php endif; ?>
                     </div>
                 <?php endif; ?>
 
-                <!-- Feedback Table (shown only when a user is selected) -->
+                <!-- Feedback Table (shown when user selected) -->
                 <?php if ($selected_user_id && !empty($feedbacks)): ?>
-                    <div class="card p-6 mt-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-lg font-semibold text-gray-900">Feedback from <?php echo htmlspecialchars($feedbacks[0]['user_name']); ?></h2>
-                            <a href="view_feedback.php?page=<?php echo $current_page; ?>" class="text-sm text-blue-600 hover:text-blue-800">Back</a>
+                    <div class="card p-6 mt-8">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-lg font-semibold text-gray-900">Feedback from <?= htmlspecialchars($feedbacks[0]['user_name']) ?></h2>
+                            <a href="?page=<?= $current_page ?>" class="text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center">
+                                <i class="fas fa-arrow-left mr-2"></i> Back to Users
+                            </a>
                         </div>
                         <div class="feedback-table overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
@@ -300,15 +321,25 @@ if ($selected_user_id) {
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <?php foreach ($feedbacks as $feedback): ?>
-                                        <tr class="hover:bg-gray-50">
-                                            <td class="px-6 py-4 text-sm text-gray-500"><?php echo htmlspecialchars($feedback['feedback_text']); ?></td>
+                                        <tr class="hover:bg-gray-50 transition-colors">
+                                            <td class="px-6 py-4 text-sm text-gray-700 max-w-md truncate">
+                                                <?= htmlspecialchars($feedback['feedback_text']) ?>
+                                            </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $feedback['sentiment'] === 'Positive' ? 'bg-green-100 text-green-800' : ($feedback['sentiment'] === 'Negative' ? 'bg-red-100 text-red-800' : ($feedback['sentiment'] === 'Neutral' ? 'bg-gray-100 text-gray-800' : 'bg-gray-100 text-gray-800')); ?>">
-                                                    <?php echo htmlspecialchars($feedback['sentiment'] ?: 'N/A'); ?>
+                                                <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                                    <?php 
+                                                    switch ($feedback['sentiment']) {
+                                                        case 'Positive': echo 'bg-green-100 text-green-800'; break;
+                                                        case 'Negative': echo 'bg-red-100 text-red-800'; break;
+                                                        case 'Neutral': echo 'bg-gray-100 text-gray-800'; break;
+                                                        default: echo 'bg-gray-100 text-gray-600'; break;
+                                                    }
+                                                    ?>">
+                                                    <?= htmlspecialchars($feedback['sentiment'] ?: 'N/A') ?>
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?php echo date('M j, Y, g:i a', strtotime($feedback['created_at'])); ?>
+                                                <?= date('M j, Y, g:i a', strtotime($feedback['created_at'])) ?>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -337,7 +368,7 @@ if ($selected_user_id) {
             sidebar.classList.toggle('translate-x-0');
         });
 
-        // Sidebar initial state on mobile
+        // Sidebar initial state
         if (window.innerWidth < 768) {
             document.querySelector('.sidebar').classList.add('-translate-x-full');
         }
@@ -354,7 +385,7 @@ if ($selected_user_id) {
             }
         });
 
-        // Profile dropdown functionality
+        // Profile dropdown
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
@@ -393,67 +424,11 @@ if ($selected_user_id) {
             profileDropdownMenu.classList.add('hidden');
         }
 
-        document.addEventListener('click', function() {
-            hideProfileDropdown();
-        });
-
-        // Notification button
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                this.style.transform = 'scale(1)';
-            }, 150);
-            alert('Notifications feature coming soon! 🔔');
-        });
-
-        // Add hover effects to profile dropdown
-        profileDropdown.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateY(-1px)';
-        });
-        profileDropdown.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateY(0)';
-        });
-
-        // Add loading animation to buttons
-        document.querySelectorAll('button').forEach(button => {
-            button.addEventListener('click', function() {
-                if (!this.classList.contains('loading') && !this.id.includes('notificationBtn')) {
-                    const originalText = this.innerHTML;
-                    this.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Loading...';
-                    this.classList.add('loading');
-                    setTimeout(() => {
-                        this.innerHTML = originalText;
-                        this.classList.remove('loading');
-                    }, 1500);
-                }
-            });
-        });
-
-        // Card click functionality
-        document.querySelectorAll('.card').forEach(card => {
-            card.addEventListener('click', function(e) {
-                e.preventDefault();
-                const userId = this.getAttribute('data-user-id');
-                if (userId) {
-                    window.location.href = `view_feedback.php?page=<?php echo $current_page; ?>&user_id=${userId}`;
-                }
-            });
-        });
-
-        // Back button functionality (fixed to preserve page)
-        document.querySelectorAll('a[href="view_feedback.php?page=<?php echo $current_page; ?>"]').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.location.href = `view_feedback.php?page=<?php echo $current_page; ?>`;
-            });
-        });
+        document.addEventListener('click', hideProfileDropdown);
     </script>
 </body>
 </html>
 
 <?php
-// Cleanup
-if (isset($stmt)) { mysqli_stmt_close($stmt); }
 mysqli_close($conn);
 ?>
