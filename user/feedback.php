@@ -53,6 +53,25 @@ function analyzeSentiment($text) {
     }
 }
 
+// Utility function for foul words detection using OpenAI
+function detectFoulWords($text) {
+    try {
+        $client = OpenAI::client($_ENV['OPENAI_API_KEY']);
+        $response = $client->chat()->create([
+            'model' => 'gpt-4o-mini',
+            'messages' => [
+                ['role' => 'system', 'content' => 'You are a profanity detector. Analyze the given text and determine if it contains any foul, profane, obscene, or offensive words or language. Respond only with "Clean" if it does not, or "Foul" if it does.'],
+                ['role' => 'user', 'content' => $text],
+            ],
+        ]);
+        $result = trim($response->choices[0]->message->content);
+        return ($result === 'Clean') ? 'Clean' : 'Foul';
+    } catch (Exception $e) {
+        error_log('OpenAI Profanity Error: ' . $e->getMessage());
+        return 'Clean'; // Default to clean on error to avoid blocking users
+    }
+}
+
 // Fetch logged-in user
 $user_id = $_SESSION['user_id'];
 $user_query = "SELECT first_name, last_name, username, email, profile_picture FROM users WHERE id = ?";
@@ -64,26 +83,40 @@ $user = mysqli_fetch_assoc($user_result);
 mysqli_stmt_close($stmt);
 $stmt = null;
 
-// Handle feedback submission
+// Handle feedback submission (POST only)
 $feedback_message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_text'])) {
     $feedback_text = trim($_POST['feedback_text']);
     if (!empty($feedback_text)) {
-        $sentiment = analyzeSentiment($feedback_text);
-        $insert_query = "INSERT INTO feedback (user_id, feedback_text, sentiment) VALUES (?, ?, ?)";
-        $stmt = mysqli_prepare($conn, $insert_query);
-        mysqli_stmt_bind_param($stmt, "iss", $user_id, $feedback_text, $sentiment);
-        if (mysqli_stmt_execute($stmt)) {
-            $feedback_message = '<div class="bg-green-50 text-green-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>Feedback submitted successfully!</div>';
-            header("Location: feedback.php");
-            exit();
+        // First, check for foul words
+        $foulCheck = detectFoulWords($feedback_text);
+        if ($foulCheck === 'Foul') {
+            $_SESSION['feedback_message'] = '<div class="bg-red-50 text-red-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>Please avoid using foul or offensive language in your feedback. Try again with cleaner words.</div>';
         } else {
-            $feedback_message = '<div class="bg-red-50 text-red-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>Error submitting feedback. Please try again.</div>';
+            // If clean, analyze sentiment and insert
+            $sentiment = analyzeSentiment($feedback_text);
+            $insert_query = "INSERT INTO feedback (user_id, feedback_text, sentiment) VALUES (?, ?, ?)";
+            $stmt = mysqli_prepare($conn, $insert_query);
+            mysqli_stmt_bind_param($stmt, "iss", $user_id, $feedback_text, $sentiment);
+            if (mysqli_stmt_execute($stmt)) {
+                $_SESSION['feedback_message'] = '<div class="bg-green-50 text-green-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>Feedback submitted successfully!</div>';
+            } else {
+                $_SESSION['feedback_message'] = '<div class="bg-red-50 text-red-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>Error submitting feedback. Please try again.</div>';
+            }
+            if (isset($stmt)) mysqli_stmt_close($stmt);
         }
-        mysqli_stmt_close($stmt);
     } else {
-        $feedback_message = '<div class="bg-yellow-50 text-yellow-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>Feedback cannot be empty.</div>';
+        $_SESSION['feedback_message'] = '<div class="bg-yellow-50 text-yellow-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>Feedback cannot be empty.</div>';
     }
+    // Always redirect after POST to avoid resubmission
+    header("Location: feedback.php");
+    exit();
+}
+
+// Check for session message on GET
+if (isset($_SESSION['feedback_message'])) {
+    $feedback_message = $_SESSION['feedback_message'];
+    unset($_SESSION['feedback_message']);
 }
 
 // Fetch user's feedback history

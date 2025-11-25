@@ -29,6 +29,7 @@ CREATE TABLE `users` (
   `accepted_terms_ip` VARCHAR(45) DEFAULT NULL,
   `accepted_terms_ua` TEXT DEFAULT NULL,
   `last_login` DATETIME DEFAULT NULL,
+  `is_active_session` TINYINT(1) DEFAULT 0,
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`),
   UNIQUE KEY `email` (`email`)
@@ -43,7 +44,7 @@ CREATE TABLE `staff` (
   `name` VARCHAR(100) NOT NULL,
   `profile_picture` VARCHAR(255) DEFAULT NULL,
   `email` VARCHAR(100) NOT NULL,
-  `role` ENUM('Admin','Employee','Manager') NOT NULL,
+  `role` ENUM('Admin','Employee') NOT NULL,
   `password` VARCHAR(255) NOT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `last_login` datetime DEFAULT NULL,
@@ -84,6 +85,22 @@ CREATE TABLE `complaint_status_history` (
   PRIMARY KEY (`id`),
   KEY `complaint_id` (`complaint_id`),
   CONSTRAINT `complaint_status_history_ibfk_1` FOREIGN KEY (`complaint_id`) REFERENCES `complaints` (`complaint_id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+-- Table structure for table `complaint_comments`
+-- (references complaints)
+-- --------------------------------------------------------
+CREATE TABLE `complaint_comments` (
+  `comment_id` INT(11) NOT NULL AUTO_INCREMENT,
+  `complaint_id` INT(11) NOT NULL,
+  `commenter_type` ENUM('user','staff') NOT NULL,
+  `commenter_id` INT(11) NOT NULL,
+  `comment` TEXT NOT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`comment_id`),
+  KEY `complaint_id` (`complaint_id`),
+  CONSTRAINT `complaint_comments_ibfk_1` FOREIGN KEY (`complaint_id`) REFERENCES `complaints` (`complaint_id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -134,6 +151,30 @@ CREATE TABLE `reports` (
   PRIMARY KEY (`report_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+-- Table structure for table `static_content`
+-- New table for static texts like history, mission, vision, core values
+-- --------------------------------------------------------
+CREATE TABLE `static_content` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `content_key` VARCHAR(50) NOT NULL UNIQUE COMMENT 'e.g., history, mission, vision, core_values',
+  `title` VARCHAR(100) NOT NULL,
+  `content` TEXT NOT NULL,
+  `language` VARCHAR(10) DEFAULT 'en' COMMENT 'en for English, tl for Tagalog',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+-- Dumping data for table `static_content`
+-- --------------------------------------------------------
+INSERT INTO `static_content` (`content_key`, `title`, `content`, `language`) VALUES
+('history', 'History', 'In 1926, the water supply system in Calamba was managed by the Municipal Government, under the administration of National Water Sewerage Authority (NAWASA), through the then called Calamba Water Works System with Tigbe Spring as the sole source of water that supplied the whole town. Come 1964, Bucal Spring was utilized with approximately 16.4 kilometer of pipelines and 380 cubic meter concrete reservoir.\nThe creation of The Provincial Water Utilities Act of 1973 also known as the Presidential Decree No. 198 (PD 198) paved the way for birth of various local water districts in the country. On August 07, 1974, the Sangguniang Bayan of Calamba, headed by then Mayor Taciano Rizal, passed the Municipal Board Resolution No. 82 Series of 1974 in pursuant to P.D. 198 as amended which gave rise to the organization of the CALAMBA WATER DISTRICT (CWD). Two years after, Local Water Utilities Administration awarded the Conditional Certificate of Conformance No. 29 on September 04, 1976 which entitled CWD to the rights and privileges authorized under PD 198. This then pronounced the official day of CWD in carrying out its mission, which at that time, provided service to a total of 1,100 active service connections.\nSafe drinking water is what CWD guarantees to its concessionaires by supplying potable water conforming to the standard specified in the PNSDW 2007 and as certified by the City Health Office through our DOH-Accredited Laboratory with Accreditation No. 254 and with the use of the latest technology, aiming mainly toward its commitment to be of good service to the community and to capture satisfaction of its concessionaires.', 'en'),
+('mission', 'Mission', 'The District will ensure the Calambeños with sufficient supply of potable water 24/7 along with its commitment to establish sewerage and septage management system as part of our environmental concern.', 'en'),
+('vision', 'Vision', 'A District with the highest quality of service that ensures customer satisfaction by providing continuous supply of potable water at an affordable cost and committed to an environmental preservation and protection.', 'en'),
+('core_values', 'Core Values', 'Knowledgeability\nDedication\nCommitment\nLoyalty\nIntegrity\nSimple Living', 'en'),
+('quality_policy', 'Quality Policy', 'The Calamba Water District is committed to quality by providing a water microbiological testing for a safe drinking water with the objectives to meet the needs of our customer at all times. Accordingly, the management of Calamba Water District is committed to satisfy tha applicable requirements by ensuring the commitment to continual improvement of the quality management system.', 'en');
 -- -- --------------------------------------------------------
 -- Table structure for table `people`
 -- -- --------------------------------------------------------

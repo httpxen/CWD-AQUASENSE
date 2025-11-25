@@ -50,6 +50,163 @@ function formatPhoneDisplay($e164) {
 $alerts = [];
 
 // ---------------------------
+// Handle AJAX requests first
+// ---------------------------
+// Get user data for edit
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_user') {
+    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit;
+    }
+    $user_id = (int)($_POST['user_id'] ?? 0);
+    if ($user_id <= 0) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Invalid user ID.']);
+        exit;
+    }
+    $query = "SELECT id, username, first_name, middle_name, last_name, email, contact_number, profile_picture FROM users WHERE id = ?";
+    $stmt = mysqli_prepare($conn, $query);
+    mysqli_stmt_bind_param($stmt, "i", $user_id);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $user = mysqli_fetch_assoc($result);
+    mysqli_stmt_close($stmt);
+    if (!$user) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'User not found.']);
+        exit;
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'user' => $user]);
+    exit;
+}
+
+// Update user
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_user') {
+    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
+        if (isset($_POST['is_ajax'])) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+            exit;
+        } else {
+            $alerts[] = ['type' => 'error', 'msg' => 'Invalid CSRF token.'];
+        }
+    } else {
+        $user_id = (int)($_POST['user_id'] ?? 0);
+        if ($user_id <= 0) {
+            if (isset($_POST['is_ajax'])) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Invalid user ID.']);
+                exit;
+            } else {
+                $alerts[] = ['type' => 'error', 'msg' => 'Invalid user ID.'];
+            }
+        } else {
+            $username = sanitize($_POST['username'] ?? '');
+            $first_name = sanitize($_POST['first_name'] ?? '');
+            $middle_name = sanitize($_POST['middle_name'] ?? '');
+            $last_name = sanitize($_POST['last_name'] ?? '');
+            $email = sanitize($_POST['email'] ?? '');
+            $contact_number = sanitize($_POST['contact_number'] ?? '');
+            $picture_path = null;
+            if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
+                $upload_dir = '../uploads/';
+                if (!file_exists($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+                $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
+                $target_path = $upload_dir . $file_name;
+                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
+                    $picture_path = 'uploads/' . $file_name;
+                    // Delete old picture
+                    $old_query = "SELECT profile_picture FROM users WHERE id = ?";
+                    $stmt_old = mysqli_prepare($conn, $old_query);
+                    mysqli_stmt_bind_param($stmt_old, "i", $user_id);
+                    mysqli_stmt_execute($stmt_old);
+                    $old_res = mysqli_stmt_get_result($stmt_old);
+                    $old_user = mysqli_fetch_assoc($old_res);
+                    mysqli_stmt_close($stmt_old);
+                    if ($old_user && $old_user['profile_picture'] && file_exists('../' . $old_user['profile_picture'])) {
+                        unlink('../' . $old_user['profile_picture']);
+                    }
+                } else {
+                    if (isset($_POST['is_ajax'])) {
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => false, 'message' => 'Failed to upload image.']);
+                        exit;
+                    } else {
+                        $alerts[] = ['type' => 'error', 'msg' => 'Failed to upload image.'];
+                    }
+                }
+            }
+            if ($picture_path) {
+                $update_query = "UPDATE users SET username = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, contact_number = ?, profile_picture = ? WHERE id = ?";
+                $stmt = mysqli_prepare($conn, $update_query);
+                mysqli_stmt_bind_param($stmt, "sssssssi", $username, $first_name, $middle_name, $last_name, $email, $contact_number, $picture_path, $user_id);
+            } else {
+                $update_query = "UPDATE users SET username = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, contact_number = ? WHERE id = ?";
+                $stmt = mysqli_prepare($conn, $update_query);
+                mysqli_stmt_bind_param($stmt, "ssssssi", $username, $first_name, $middle_name, $last_name, $email, $contact_number, $user_id);
+            }
+            if (mysqli_stmt_execute($stmt)) {
+                if (isset($_POST['is_ajax'])) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => true, 'message' => 'User updated successfully.']);
+                    exit;
+                } else {
+                    $alerts[] = ['type' => 'success', 'msg' => 'User updated successfully.'];
+                }
+            } else {
+                if (isset($_POST['is_ajax'])) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => 'Failed to update user.']);
+                    exit;
+                } else {
+                    $alerts[] = ['type' => 'error', 'msg' => 'Failed to update user.'];
+                }
+            }
+            mysqli_stmt_close($stmt);
+        }
+    }
+}
+
+// ---------------------------
+// Handle user deletion
+// ---------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_user') {
+    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
+        $msg = 'Invalid CSRF token.';
+        $success = false;
+    } else {
+        $user_id = (int)($_POST['user_id'] ?? 0);
+        if ($user_id <= 0) {
+            $msg = 'Invalid user ID.';
+            $success = false;
+        } else {
+            $delete_query = "DELETE FROM users WHERE id = ?";
+            $stmt = mysqli_prepare($conn, $delete_query);
+            mysqli_stmt_bind_param($stmt, "i", $user_id);
+            if (mysqli_stmt_execute($stmt)) {
+                $msg = 'User deleted successfully.';
+                $success = true;
+            } else {
+                $msg = 'Failed to delete user.';
+                $success = false;
+            }
+            mysqli_stmt_close($stmt);
+        }
+    }
+    if (isset($_POST['is_ajax'])) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => $success, 'message' => $msg]);
+        exit;
+    } else {
+        $alerts[] = ['type' => $success ? 'success' : 'error', 'msg' => $msg];
+    }
+}
+
+// ---------------------------
 // Fetch staff info
 // ---------------------------
 $staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
@@ -61,34 +218,10 @@ $staff = mysqli_fetch_assoc($result);
 if (!$staff) {
     session_unset();
     session_destroy();
-    header("Location: login.php?message=Account_account_not_found.");
+    header("Location: login.php?message=Account not found.");
     exit();
 }
 mysqli_stmt_close($stmt);
-
-// ---------------------------
-// Handle user deletion
-// ---------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_user') {
-    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
-        $alerts[] = ['type' => 'error', 'msg' => 'Invalid CSRF token.'];
-    } else {
-        $user_id = (int)($_POST['user_id'] ?? 0);
-        if ($user_id <= 0) {
-            $alerts[] = ['type' => 'error', 'msg' => 'Invalid user ID.'];
-        } else {
-            $delete_query = "DELETE FROM users WHERE id = ?";
-            $stmt = mysqli_prepare($conn, $delete_query);
-            mysqli_stmt_bind_param($stmt, "i", $user_id);
-            if (mysqli_stmt_execute($stmt)) {
-                $alerts[] = ['type' => 'success', 'msg' => 'User deleted successfully.'];
-            } else {
-                $alerts[] = ['type' => 'error', 'msg' => 'Failed to delete user.'];
-            }
-            mysqli_stmt_close($stmt);
-        }
-    }
-}
 
 // ---------------------------
 // Fetch users with pagination and search
@@ -107,15 +240,14 @@ if ($search !== '') {
     $search_params = [$like, $like, $like, $like, $like];
 }
 
-// Users query
+// Users query - UPDATED STATUS LOGIC
 $users_query = "
     SELECT 
         id, username, 
         CONCAT(COALESCE(first_name, ''), ' ', COALESCE(middle_name, ''), ' ', COALESCE(last_name, '')) as full_name, 
-        email, contact_number, profile_picture, created_at, last_login, token_expiry,
+        email, contact_number, profile_picture, created_at, last_login, token_expiry, is_active_session,
         CASE 
-            WHEN last_login IS NOT NULL AND last_login >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 'Active'
-            WHEN token_expiry IS NOT NULL AND token_expiry > NOW() THEN 'Active'
+            WHEN is_active_session = 1 OR (token_expiry IS NOT NULL AND token_expiry > NOW()) THEN 'Active'
             ELSE 'Inactive'
         END as status 
     FROM users $where_clause 
@@ -270,7 +402,7 @@ mysqli_stmt_close($stmt);
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo get_avatar_src($staff['profile_picture'], $staff['name']); ?>" alt="<?= htmlspecialchars($staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
-                                    <div class="absolute - حساب -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
+                                    <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                                 </div>
                                 <div class="hidden md:block">
                                     <p class="text-sm font-semibold text-gray-900 truncate max-w-32"><?php echo htmlspecialchars($staff['name']); ?></p>
@@ -344,7 +476,7 @@ mysqli_stmt_close($stmt);
                                     <?php foreach ($users as $user): ?>
                                         <tr class="hover:bg-gray-50">
                                             <td class="px-6 py-4 whitespace-nowrap">
-                                                <img src="<?php echo get_avatar_src($user['profile_picture'], $user['full_name']); ?>" alt="<?= htmlspecialchars($user['full_name'] ?: $user['username']) ?>'arvi" class="w-10 h-10 rounded-full object-cover">
+                                                <img src="<?php echo get_avatar_src($user['profile_picture'], $user['full_name']); ?>" alt="<?= htmlspecialchars($user['full_name'] ?: $user['username']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover">
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                 <?php echo htmlspecialchars($user['username']); ?>
@@ -367,17 +499,12 @@ mysqli_stmt_close($stmt);
                                                 <?php echo date('M j, Y', strtotime($user['created_at'])); ?>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <a href="edit_user.php?id=<?php echo $user['id']; ?>" class="text-blue-600 hover:text-blue-900 mr-3">
+                                                <button class="edit-btn text-blue-600 hover:text-blue-900 mr-3" data-id="<?php echo $user['id']; ?>">
                                                     <i class="fas fa-edit"></i>
-                                                </a>
-                                                <form action="" method="POST" class="inline" onsubmit="return confirm('Delete this user? This cannot be undone.');">
-                                                    <input type="hidden" name="action" value="delete_user">
-                                                    <input type="hidden" name="user_id" value="<?php echo $user['id']; ?>">
-                                                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                                    <button type="submit" class="text-red-600 hover:text-red-900">
-                                                       : <i class="fas fa-trash"></i>
-                                                    </button>
-                                                </form>
+                                                </button>
+                                                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?php echo $user['id']; ?>">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -410,6 +537,51 @@ mysqli_stmt_close($stmt);
         </div>
     </div>
 
+    <!-- Edit Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md max-h-full overflow-y-auto">
+            <h3 class="text-lg font-semibold mb-4">Edit User</h3>
+            <form id="editForm" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="update_user">
+                <input type="hidden" name="user_id" id="edit_user_id">
+                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                    <input type="text" name="username" id="edit_username" class="w-full p-2 border border-gray-300 rounded" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                    <input type="text" name="first_name" id="edit_first_name" class="w-full p-2 border border-gray-300 rounded">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Middle Name</label>
+                    <input type="text" name="middle_name" id="edit_middle_name" class="w-full p-2 border border-gray-300 rounded">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                    <input type="text" name="last_name" id="edit_last_name" class="w-full p-2 border border-gray-300 rounded">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input type="email" name="email" id="edit_email" class="w-full p-2 border border-gray-300 rounded" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Contact Number (E.164)</label>
+                    <input type="tel" name="contact_number" id="edit_contact_number" class="w-full p-2 border border-gray-300 rounded">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
+                    <input type="file" name="profile_picture" id="edit_profile_picture" class="w-full p-2 border border-gray-300 rounded" accept="image/*">
+                    <div id="current_picture" class="mt-2"></div>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="cancelEdit" class="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Mobile Menu Toggle -->
     <button id="mobileMenuToggle" class="fixed top-4 left-4 z-40 p-2 rounded-lg text-gray-600 bg-white shadow-lg md:hidden">
         <i class="fas fa-bars text-lg"></i>
@@ -418,6 +590,7 @@ mysqli_stmt_close($stmt);
     <!-- Profile Dropdown -->
     <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         // Mobile menu toggle
         document.getElementById('mobileMenuToggle').addEventListener('click', function() {
@@ -493,6 +666,112 @@ mysqli_stmt_close($stmt);
                 const val = this.value.trim();
                 window.location.href = `?page=1&search=${encodeURIComponent(val)}`;
             }
+        });
+
+        // Edit functionality
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const id = btn.dataset.id;
+                const formData = new FormData();
+                formData.append('action', 'get_user');
+                formData.append('user_id', id);
+                formData.append('csrf_token', '<?php echo $csrf_token; ?>');
+                try {
+                    const res = await fetch('', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if (data.success) {
+                        const user = data.user;
+                        document.getElementById('edit_user_id').value = user.id;
+                        document.getElementById('edit_username').value = user.username;
+                        document.getElementById('edit_first_name').value = user.first_name || '';
+                        document.getElementById('edit_middle_name').value = user.middle_name || '';
+                        document.getElementById('edit_last_name').value = user.last_name || '';
+                        document.getElementById('edit_email').value = user.email;
+                        document.getElementById('edit_contact_number').value = user.contact_number;
+                        if (user.profile_picture) {
+                            document.getElementById('current_picture').innerHTML = `<img src="../${user.profile_picture}" alt="Current" class="w-20 h-20 rounded-full object-cover"> <p class="text-sm text-gray-500">Current profile picture</p>`;
+                        } else {
+                            document.getElementById('current_picture').innerHTML = '';
+                        }
+                        document.getElementById('editModal').classList.remove('hidden');
+                    } else {
+                        Swal.fire('Error!', data.message, 'error');
+                    }
+                } catch (err) {
+                    Swal.fire('Error!', 'Failed to load user data', 'error');
+                }
+            });
+        });
+
+        // Edit form submit
+        document.getElementById('editForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            formData.append('is_ajax', '1');
+            try {
+                const res = await fetch('', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    Swal.fire('Updated!', 'User has been updated.', 'success').then(() => {
+                        document.getElementById('editModal').classList.add('hidden');
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error!', data.message || 'Failed to update', 'error');
+                }
+            } catch (err) {
+                Swal.fire('Error!', 'Failed to update user', 'error');
+            }
+        });
+
+        // Cancel edit
+        document.getElementById('cancelEdit').addEventListener('click', () => {
+            document.getElementById('editModal').classList.add('hidden');
+        });
+
+        // Close modal on outside click
+        document.getElementById('editModal').addEventListener('click', (e) => {
+            if (e.target.id === 'editModal') {
+                document.getElementById('editModal').classList.add('hidden');
+            }
+        });
+
+        // Delete functionality
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const id = btn.dataset.id;
+                const result = await Swal.fire({
+                    title: 'Are you sure?',
+                    text: 'This cannot be undone!',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3b82f6',
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'Yes, delete it!'
+                });
+                if (result.isConfirmed) {
+                    const formData = new URLSearchParams();
+                    formData.append('action', 'delete_user');
+                    formData.append('user_id', id);
+                    formData.append('csrf_token', '<?php echo $csrf_token; ?>');
+                    formData.append('is_ajax', '1');
+                    try {
+                        const res = await fetch('', { method: 'POST', body: formData });
+                        const data = await res.json();
+                        if (data.success) {
+                            Swal.fire('Deleted!', 'User has been deleted.', 'success').then(() => {
+                                location.reload();
+                            });
+                        } else {
+                            Swal.fire('Error!', data.message, 'error');
+                        }
+                    } catch (err) {
+                        Swal.fire('Error!', 'Failed to delete user', 'error');
+                    }
+                }
+            });
         });
     </script>
 </body>

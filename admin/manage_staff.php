@@ -42,43 +42,6 @@ function get_avatar_src($profile_picture, $name) {
 }
 
 // ---------------------------
-// Handle GET alerts (legacy support)
-// ---------------------------
-$alerts = [];
-if (isset($_GET['alert'])) {
-    if ($_GET['alert'] === 'success_add') {
-        $alerts[] = ['type' => 'success', 'msg' => 'Staff member added successfully.'];
-    } elseif ($_GET['alert'] === 'success_edit') {
-        $alerts[] = ['type' => 'success', 'msg' => 'Staff member updated successfully.'];
-    } elseif ($_GET['alert'] === 'success_delete') {
-        $alerts[] = ['type' => 'success', 'msg' => 'Staff member deleted successfully.'];
-    } elseif ($_GET['alert'] === 'error') {
-        $alerts[] = ['type' => 'error', 'msg' => 'An error occurred. Please try again.'];
-    }
-}
-
-// ---------------------------
-// AJAX: Get staff for edit
-// ---------------------------
-if (isset($_GET['ajax']) && $_GET['ajax'] == 'get_staff' && isset($_GET['id'])) {
-    $id = (int)$_GET['id'];
-    $q = "SELECT staff_id, name, email, role FROM staff WHERE staff_id = ?";
-    $stmt = mysqli_prepare($conn, $q);
-    mysqli_stmt_bind_param($stmt, "i", $id);
-    mysqli_stmt_execute($stmt);
-    $res = mysqli_stmt_get_result($stmt);
-    $staff = mysqli_fetch_assoc($res);
-    mysqli_stmt_close($stmt);
-
-    if ($staff) {
-        echo json_encode(['success' => true, 'staff' => $staff]);
-    } else {
-        echo json_encode(['success' => false]);
-    }
-    exit();
-}
-
-// ---------------------------
 // Fetch current staff info
 // ---------------------------
 $current_staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
@@ -98,7 +61,7 @@ mysqli_stmt_close($stmt);
 // ---------------------------
 // Handle POST requests (AJAX)
 // ---------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
 
     if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
@@ -107,6 +70,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
     }
 
     $action = sanitize($_POST['action'] ?? '');
+
+    if ($action === 'get_staff') {
+        $id = (int)($_POST['staff_id'] ?? 0);
+        if ($id <= 0) {
+            echo json_encode(['success' => false, 'msg' => 'Invalid staff ID.']);
+            exit();
+        }
+        $q = "SELECT staff_id, name, email, role FROM staff WHERE staff_id = ?";
+        $stmt = mysqli_prepare($conn, $q);
+        mysqli_stmt_bind_param($stmt, "i", $id);
+        mysqli_stmt_execute($stmt);
+        $res = mysqli_stmt_get_result($stmt);
+        $staff = mysqli_fetch_assoc($res);
+        mysqli_stmt_close($stmt);
+
+        if ($staff) {
+            echo json_encode(['success' => true, 'staff' => $staff]);
+        } else {
+            echo json_encode(['success' => false, 'msg' => 'Staff not found.']);
+        }
+        exit();
+    }
 
     if ($action === 'add') {
         $name = sanitize($_POST['name']);
@@ -137,13 +122,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         $profile_picture = NULL;
 
         if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-            $upload_dir = '../uploads/staff/';
+            $upload_dir = '../assets/uploads/staff/';
             if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
             $file_extension = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
             $file_name = uniqid() . '.' . $file_extension;
             $upload_path = $upload_dir . $file_name;
             if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                $profile_picture = 'uploads/staff/' . $file_name;
+                $profile_picture = '../assets/uploads/staff/' . $file_name;
             }
         }
 
@@ -313,14 +298,12 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
         .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
         .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .status { border-radius: 0.5rem; padding: 0.75rem 1rem; }
         .avatar-glow { position: relative; cursor: pointer; }
         .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
         .avatar-glow:hover::before { opacity: 1; }
         @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
         .header-2025 { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.2); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); margin-left: 256px; width: calc(100% - 256px); }
-        html { scroll-behavior: smooth; }
         main { margin-left: 256px; padding: 1.5rem; }
         @media (max-width: 767px) {
             .header-2025 { margin-left: 0; width: 100%; }
@@ -328,97 +311,15 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.translate-x-0 { transform: translateX(0); }
         }
-        .modal { transition: opacity 0.3s ease; }
-
-        /* PROFESSIONAL TOAST - 5 SECONDS */
-        .toast { 
-            position: fixed; 
-            bottom: 1.5rem; 
-            right: 1rem; 
-            z-index: 100; 
-            animation: slideInBottom 0.4s ease-out; 
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
-            border-radius: 1rem;
-            padding: 1rem 1.25rem;
-            min-width: 340px;
-            max-width: 460px;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-weight: 500;
-            color: #1f2937;
-            font-size: 0.925rem;
-        }
-
-        .toast-success { border-left: 4px solid #10b981; }
-        .toast-error { border-left: 4px solid #ef4444; }
-
-        .toast-icon {
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            font-size: 0.9rem;
-        }
-
-        .toast-success .toast-icon {
-            background: #d1fae5;
-            color: #10b981;
-        }
-
-        .toast-error .toast-icon {
-            background: #fee2e2;
-            color: #ef4444;
-        }
-
-        .toast-progress {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            height: 3px;
-            background: #10b981;
-            border-radius: 0 0 1rem 1rem;
-            animation: shrink 5s linear forwards;
-        }
-
-        .toast-error .toast-progress {
-            background: #ef4444;
-        }
-
-        @keyframes slideInBottom { 
-            from { transform: translateY(100%); opacity: 0; } 
-            to { transform: translateY(0); opacity: 1; } 
-        }
-
-        @keyframes slideOutBottom { 
-            to { transform: translateY(100%); opacity: 0; } 
-        }
-
-        @keyframes shrink {
-            from { width: 100%; }
-            to { width: 0%; }
-        }
-
         .btn-loading { pointer-events: none; opacity: 0.7; }
         .btn-loading::after { content: ''; display: inline-block; width: 1em; height: 1em; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin 0.8s linear infinite; margin-left: 0.5rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Z-INDEX FIXES */
         #staffModal { z-index: 50; }
-        #confirmModal, #deleteModal { z-index: 60; }
-        #confirmModal .transform { animation: popIn 0.2s ease-out; }
-        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     </style>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
-        <!-- SIDEBAR -->
+        <!-- Sidebar -->
         <div class="sidebar w-64 bg-white shadow-lg fixed h-full z-30">
             <div class="flex flex-col h-full">
                 <div class="p-6">
@@ -490,6 +391,7 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-4"></div>
                         <div class="flex items-center space-x-4">
+                            <!-- Profile Dropdown - SAME AS DASHBOARD -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo htmlspecialchars(get_avatar_src($current_staff['profile_picture'], $current_staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
@@ -507,18 +409,6 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             </header>
 
             <main class="p-6 space-y-6">
-                <!-- Legacy Alerts -->
-                <?php if (!empty($alerts)): ?>
-                    <?php foreach ($alerts as $a): ?>
-                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'; ?>">
-                            <div class="flex items-start">
-                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'; ?>"></i>
-                                <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-
                 <!-- Staff Table -->
                 <div class="card p-6">
                     <div class="flex justify-between items-center mb-6">
@@ -577,26 +467,16 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
         </div>
     </div>
 
-    <!-- Toast Container -->
-    <div id="toastContainer"></div>
+    <!-- Mobile Menu Toggle -->
+    <button id="mobileMenuToggle" class="fixed top-4 left-4 z-40 p-2 rounded-lg text-gray-600 bg-white shadow-lg md:hidden">
+        <i class="fas fa-bars text-lg"></i>
+    </button>
 
-    <!-- Confirmation Modal -->
-    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-60 p-4">
-        <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 transform transition-all scale-95">
-            <div class="flex items-center mb-4">
-                <i class="fas fa-question-circle text-3xl text-blue-600 mr-3"></i>
-                <h3 class="text-lg font-semibold text-gray-900">Confirm Action</h3>
-            </div>
-            <p class="text-sm text-gray-600 mb-6" id="confirmMessage">Are you sure?</p>
-            <div class="flex justify-end space-x-3">
-                <button id="cancelConfirm" class="px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button id="proceedConfirm" class="btn-primary px-4 py-2 rounded-lg">Proceed</button>
-            </div>
-        </div>
-    </div>
+    <!-- Profile Dropdown Menu -->
+    <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50"></div>
 
     <!-- Add/Edit Staff Modal -->
-    <div id="staffModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4 modal">
+    <div id="staffModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div class="p-6">
                 <h2 id="modalTitle" class="text-xl font-bold text-gray-900 mb-4">Add New Staff</h2>
@@ -604,7 +484,6 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
                     <input type="hidden" name="action" id="formAction" value="add">
                     <input type="hidden" name="staff_id" id="editStaffId" value="">
-                    <input type="hidden" name="ajax" value="1">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
                         <input type="text" name="name" id="formName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -618,7 +497,6 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
                         <select name="role" id="formRole" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="Admin">Admin</option>
                             <option value="Employee">Employee</option>
-                            <option value="Manager">Manager</option>
                         </select>
                     </div>
                     <div>
@@ -640,43 +518,53 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
         </div>
     </div>
 
-    <!-- Delete Modal -->
-    <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-60 p-4">
-        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-2">Confirm Delete</h3>
-            <p class="text-sm text-gray-600 mb-6">This action cannot be undone.</p>
-            <div class="flex justify-end space-x-3">
-                <button id="cancelDelete" class="px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300">Cancel</button>
-                <button id="proceedDelete" class="px-4 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100">Delete</button>
-            </div>
-        </div>
-    </div>
-
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         const csrfToken = '<?php echo $csrf_token; ?>';
-        let currentDeleteId = null;
 
-        // Professional Toast - 5 Seconds
-        function showToast(message, type = 'success', duration = 5000) {
-            const toast = document.createElement('div');
-            toast.className = `toast ${type === 'success' ? 'toast-success' : 'toast-error'}`;
-            
-            toast.innerHTML = `
-                <div class="toast-icon">
-                    <i class="fas ${type === 'success' ? 'fa-check' : 'fa-times'}"></i>
-                </div>
-                <span class="flex-1">${message}</span>
-                <div class="toast-progress" style="animation-duration: ${duration}ms;"></div>
-            `;
+        // Mobile menu toggle
+        document.getElementById('mobileMenuToggle').addEventListener('click', function() {
+            document.querySelector('.sidebar').classList.toggle('-translate-x-full');
+        });
 
-            const container = document.getElementById('toastContainer');
-            container.appendChild(toast);
+        // Profile Dropdown (exact same sa dashboard)
+        const profileDropdown = document.getElementById('profileDropdown');
+        const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
-            setTimeout(() => {
-                toast.style.animation = 'slideOutBottom 0.4s ease-out forwards';
-                toast.addEventListener('animationend', () => toast.remove());
-            }, duration);
-        }
+        profileDropdown.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (profileDropdownMenu.classList.contains('hidden')) {
+                profileDropdownMenu.innerHTML = `
+                    <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        My Profile
+                    </a>
+                    <div class="border-t border-gray-100 my-1"></div>
+                    <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
+                        Sign Out
+                    </a>
+                `;
+                profileDropdownMenu.classList.remove('hidden');
+                const rect = profileDropdown.getBoundingClientRect();
+                profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
+                profileDropdownMenu.style.right = `${window.innerWidth - rect.right + 8}px`;
+            } else {
+                profileDropdownMenu.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!profileDropdown.contains(e.target)) {
+                profileDropdownMenu.classList.add('hidden');
+            }
+        });
+
+        window.addEventListener('scroll', () => profileDropdownMenu.classList.add('hidden'));
 
         // Open Add Modal
         function openAddModal() {
@@ -692,29 +580,73 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
 
         // Edit Staff
         function editStaff(id) {
-            fetch(`manage_staff.php?ajax=get_staff&id=${id}`)
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('modalTitle').textContent = 'Edit Staff';
-                        document.getElementById('formAction').value = 'edit';
-                        document.getElementById('editStaffId').value = data.staff.staff_id;
-                        document.getElementById('formName').value = data.staff.name;
-                        document.getElementById('formEmail').value = data.staff.email;
-                        document.getElementById('formRole').value = data.staff.role;
-                        document.getElementById('formPassword').required = false;
-                        document.getElementById('passwordLabel').textContent = 'Password (Leave blank to keep current)';
-                        document.getElementById('staffModal').classList.remove('hidden');
-                        document.body.style.overflow = 'hidden';
-                    }
-                });
+            const formData = new FormData();
+            formData.append('action', 'get_staff');
+            formData.append('staff_id', id);
+            formData.append('csrf_token', csrfToken);
+            fetch('manage_staff.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('modalTitle').textContent = 'Edit Staff';
+                    document.getElementById('formAction').value = 'edit';
+                    document.getElementById('editStaffId').value = data.staff.staff_id;
+                    document.getElementById('formName').value = data.staff.name;
+                    document.getElementById('formEmail').value = data.staff.email;
+                    document.getElementById('formRole').value = data.staff.role;
+                    document.getElementById('formPassword').required = false;
+                    document.getElementById('passwordLabel').textContent = 'Password (Leave blank to keep current)';
+                    document.getElementById('staffModal').classList.remove('hidden');
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    Swal.fire('Error!', data.msg || 'Failed to load staff data', 'error');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                Swal.fire('Error!', 'Failed to load staff data', 'error');
+            });
         }
 
         // Delete Staff
         function deleteStaff(id) {
-            currentDeleteId = id;
-            document.getElementById('deleteModal').classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
+            Swal.fire({
+                title: 'Are you sure?',
+                text: "You won't be able to revert this!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3b82f6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Yes, delete it!'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const formData = new FormData();
+                    formData.append('action', 'delete');
+                    formData.append('staff_id', id);
+                    formData.append('csrf_token', csrfToken);
+                    fetch('manage_staff.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire('Deleted!', data.msg, 'success').then(() => {
+                                removeStaffRow(id);
+                            });
+                        } else {
+                            Swal.fire('Error!', data.msg || 'Failed to delete staff', 'error');
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        Swal.fire('Error!', 'Failed to delete staff', 'error');
+                    });
+                }
+            });
         }
 
         // Close Modals
@@ -722,42 +654,18 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             document.getElementById('staffModal').classList.add('hidden');
             document.body.style.overflow = 'auto';
         };
-        document.getElementById('cancelDelete').onclick = () => {
-            document.getElementById('deleteModal').classList.add('hidden');
-            document.body.style.overflow = 'auto';
-        };
 
         // Close on backdrop
-        document.querySelectorAll('.fixed.inset-0').forEach(m => {
-            m.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.classList.add('hidden');
-                    document.body.style.overflow = 'auto';
-                }
-            });
-        });
-
-        // Save with Confirmation
-        document.getElementById('saveBtn').addEventListener('click', () => {
-            const action = document.getElementById('formAction').value;
-            document.getElementById('confirmMessage').textContent = 
-                `Are you sure you want to ${action === 'add' ? 'add' : 'update'} this staff member?`;
-            
-            document.getElementById('staffModal').classList.add('hidden');
-            document.getElementById('confirmModal').classList.remove('hidden');
-        });
-
-        document.getElementById('cancelConfirm').onclick = () => {
-            document.getElementById('confirmModal').classList.add('hidden');
-            document.getElementById('staffModal').classList.remove('hidden');
-        };
-
-        document.getElementById('proceedConfirm').addEventListener('click', () => {
-            document.getElementById('confirmModal').classList.add('hidden');
-            submitForm();
+        document.getElementById('staffModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            }
         });
 
         // Submit Form - INSTANT UPDATE
+        document.getElementById('saveBtn').addEventListener('click', submitForm);
+
         function submitForm() {
             const form = document.getElementById('staffForm');
             const formData = new FormData(form);
@@ -776,38 +684,37 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    showToast(data.msg, 'success');
+                    Swal.fire('Success!', data.msg, 'success').then(() => {
+                        if (action === 'add') {
+                            const newStaff = {
+                                staff_id: data.staff_id,
+                                name: formData.get('name'),
+                                email: formData.get('email'),
+                                role: formData.get('role'),
+                                created_at: new Date().toISOString().split('T')[0],
+                                profile_picture: data.profile_picture
+                            };
+                            addStaffRow(newStaff);
+                        } else if (action === 'edit') {
+                            updateStaffRow(staffId, {
+                                name: formData.get('name'),
+                                email: formData.get('email'),
+                                role: formData.get('role'),
+                                profile_picture: data.profile_picture
+                            });
+                        }
 
-                    document.getElementById('staffModal').classList.add('hidden');
-                    document.body.style.overflow = 'auto';
-
-                    if (action === 'add') {
-                        const newStaff = {
-                            staff_id: data.staff_id,
-                            name: formData.get('name'),
-                            email: formData.get('email'),
-                            role: formData.get('role'),
-                            created_at: new Date().toISOString().split('T')[0],
-                            profile_picture: data.profile_picture
-                        };
-                        addStaffRow(newStaff);
-                    } else if (action === 'edit') {
-                        updateStaffRow(staffId, {
-                            name: formData.get('name'),
-                            email: formData.get('email'),
-                            role: formData.get('role'),
-                            profile_picture: data.profile_picture
-                        });
-                    }
-
-                    form.reset();
+                        document.getElementById('staffModal').classList.add('hidden');
+                        document.body.style.overflow = 'auto';
+                        form.reset();
+                    });
                 } else {
-                    showToast(data.msg || 'Operation failed.', 'error');
+                    Swal.fire('Error!', data.msg || 'Operation failed.', 'error');
                 }
             })
             .catch(err => {
                 console.error(err);
-                showToast('Network error. Please try again.', 'error');
+                Swal.fire('Error!', 'Network error. Please try again.', 'error');
             })
             .finally(() => {
                 saveBtn.classList.remove('btn-loading');
@@ -883,32 +790,6 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             const month = date.toLocaleString('default', { month: 'short' });
             return `${month} ${date.getDate()}, ${date.getFullYear()}`;
         }
-
-        // Delete with Confirmation - Instant Remove
-        document.getElementById('proceedDelete').addEventListener('click', () => {
-            const formData = new FormData();
-            formData.append('action', 'delete');
-            formData.append('staff_id', currentDeleteId);
-            formData.append('csrf_token', csrfToken);
-            formData.append('ajax', '1');
-
-            fetch('manage_staff.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    showToast(data.msg, 'success');
-                    removeStaffRow(currentDeleteId);
-                    document.getElementById('deleteModal').classList.add('hidden');
-                    document.body.style.overflow = 'auto';
-                } else {
-                    showToast(data.msg || 'Delete failed.', 'error');
-                }
-            })
-            .catch(() => showToast('Network error.', 'error'));
-        });
     </script>
 </body>
 </html>

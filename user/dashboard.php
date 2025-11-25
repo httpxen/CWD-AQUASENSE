@@ -262,7 +262,7 @@ mysqli_stmt_close($avg_stmt); // Close once
         <?php if (isset($_SESSION['welcome_message'])): ?>
             Swal.fire({
                 icon: 'success',
-                title: 'Welcome back!',
+                title: 'Welcome!',
                 html: '<p class="text-lg font-medium text-gray-700"><?= $_SESSION['welcome_message'] ?></p>',
                 showConfirmButton: true,
                 confirmButtonText: 'Continue',

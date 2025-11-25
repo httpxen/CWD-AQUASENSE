@@ -306,18 +306,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </header>
 
             <main class="p-6 space-y-6">
-                <!-- Alerts -->
-                <?php if (!empty($alerts)): ?>
-                    <?php foreach ($alerts as $a): ?>
-                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : ($a['type'] === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'); ?>">
-                            <div class="flex items-start">
-                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : ($a['type'] === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-info'); ?>"></i>
-                                <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-
                 <!-- Grid -->
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     <!-- Left: Profile Overview & Avatar -->
@@ -441,7 +429,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <img class="modal-content" id="modalImage" />
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
+        // Show SweetAlerts for PHP alerts
+        <?php if (!empty($alerts)): ?>
+            <?php foreach ($alerts as $a): ?>
+                Swal.fire({
+                    title: '<?php echo ucfirst($a['type']); ?>!',
+                    text: '<?php echo addslashes($a['msg']); ?>',
+                    icon: '<?php echo $a['type']; ?>',
+                    confirmButtonColor: '#3b82f6',
+                    timer: <?php echo $a['type'] === 'success' ? '3000' : 'null'; ?>,
+                    timerProgressBar: <?php echo $a['type'] === 'success' ? 'true' : 'false'; ?>
+                });
+            <?php endforeach; ?>
+        <?php endif; ?>
+
         // Mobile menu toggle
         document.getElementById('mobileMenuToggle').addEventListener('click', function() {
             const sidebar = document.querySelector('.sidebar');

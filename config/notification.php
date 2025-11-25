@@ -1,9 +1,10 @@
 <?php
-// config/admin_notification.php
+// config/notification.php
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+use PHPMailer\PHPMailer\SMTP;
 
-require_once __DIR__ . '/../config/env.php';
+require_once __DIR__ . '/env.php';
 
 class AdminNotification {
     private $mail;
@@ -12,19 +13,29 @@ class AdminNotification {
         date_default_timezone_set('Asia/Manila');
         
         $this->mail = new PHPMailer(true);
-        $this->mail->isSMTP();
-        $this->mail->Host       = $_ENV['SMTP_HOST'];
-        $this->mail->SMTPAuth   = true;
-        $this->mail->Username   = $_ENV['SMTP_USERNAME'];
-        $this->mail->Password   = $_ENV['SMTP_PASSWORD'];
-        $this->mail->SMTPSecure = $_ENV['SMTP_ENCRYPTION'];
-        $this->mail->Port       = $_ENV['SMTP_PORT'];
-        
-        $this->mail->setFrom($_ENV['MAIL_FROM_ADDRESS'], $_ENV['MAIL_FROM_NAME']);
-        $this->mail->addReplyTo($_ENV['MAIL_REPLYTO'], $_ENV['MAIL_REPLYTO_NAME']);
-        
-        $this->mail->isHTML(true);
-        $this->mail->CharSet = 'UTF-8';
+        try {
+            $this->mail->isSMTP();
+            $this->mail->Host       = $_ENV['SMTP_HOST'];
+            $this->mail->SMTPAuth   = true;
+            $this->mail->Username   = $_ENV['SMTP_USERNAME'];
+            $this->mail->Password   = $_ENV['SMTP_PASSWORD'];
+            $this->mail->SMTPSecure = $_ENV['SMTP_ENCRYPTION'];
+            $this->mail->Port       = $_ENV['SMTP_PORT'];
+            
+            $this->mail->setFrom($_ENV['MAIL_FROM_ADDRESS'], $_ENV['MAIL_FROM_NAME']);
+            $this->mail->addReplyTo($_ENV['MAIL_REPLYTO'], $_ENV['MAIL_REPLYTO_NAME']);
+            
+            $this->mail->isHTML(true);
+            $this->mail->CharSet = 'UTF-8';
+
+            // DEBUG MODE (uncomment to see errors)
+            // $this->mail->SMTPDebug = SMTP::DEBUG_SERVER;
+            // $this->mail->Debugoutput = function($str, $level) {
+            //     error_log("PHPMailer [$level]: $str");
+            // };
+        } catch (Exception $e) {
+            error_log("PHPMailer init failed: " . $e->getMessage());
+        }
     }
     
     public function sendRegistrationAlert($userDetails) {
@@ -43,12 +54,11 @@ class AdminNotification {
             return true;
             
         } catch (Exception $e) {
-            error_log("Registration alert email could not be sent. Mailer Error: {$this->mail->ErrorInfo}");
+            error_log("Registration alert email failed: " . $this->mail->ErrorInfo);
             return false;
         }
     }
 
-    
     private function getRegistrationAlertTemplate($userDetails) {
         $fullName = trim($userDetails['first_name'] . ' ' . ($userDetails['middle_name'] ?? '') . ' ' . $userDetails['last_name']);
         $fullName = trim($fullName);
