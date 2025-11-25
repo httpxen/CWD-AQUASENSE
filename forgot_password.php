@@ -70,7 +70,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
   <style>
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-image: url('assets/icons/CWD.jpg');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      min-height: 100vh;
+      position: relative;
     }
+
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.90);
+      backdrop-filter: blur(1px);
+      z-index: 0;
+    }
+
+    .min-h-screen > * {
+      position: relative;
+      z-index: 1;
+    }
+
     .form-input {
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       background: linear-gradient(white, white) padding-box, 
@@ -90,8 +112,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
     .card {
-      background: linear-gradient(145deg, #ffffff, #f8fafc);
-      border: 1px solid rgba(0, 0, 0, 0.05);
+      background: rgba(255, 255, 255, 0.94) !important;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+      border-radius: 1.5rem;
     }
     .logo-container {
       background: linear-gradient(135deg, #eff6ff, #dbeafe);
@@ -118,11 +144,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
   </style>
 </head>
-<body class="bg-gray-50">
+<body>
   <div class="min-h-screen flex flex-col justify-center py-8 sm:px-6 lg:px-8 relative overflow-hidden">
-    
-    <!-- Subtle Background Pattern -->
-    <div class="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-white/50 to-indigo-50/20"></div>
     
     <div class="sm:mx-auto sm:w-full sm:max-w-md relative z-10 fade-in-up">
       

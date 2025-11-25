@@ -1,5 +1,5 @@
 <?php
-// includes/complaints.php (Updated with History Timeline Integration)
+// includes/complaints.php (Updated with Map Modal Integration and Per-Row Lat/Lng Fetch)
 
 // Assuming get_avatar_src function is available or include the helper
 function get_avatar_src($profile_picture, $name) {
@@ -80,8 +80,23 @@ if ($total_rows > 0) {
     <?php else: ?>
         <!-- Results Container -->
         <div id="complaintsContainer" class="space-y-4">
-            <?php while ($row = mysqli_fetch_assoc($list_res)): ?>
-                <?php
+            <?php 
+            mysqli_data_seek($list_res, 0); // Ensure pointer is at start for display loop
+            while ($row = mysqli_fetch_assoc($list_res)): 
+                // Fetch lat/lng for this complaint since not in main SELECT
+                $loc_sql = "SELECT location_lat, location_lng FROM complaints WHERE complaint_id = ?";
+                $stmt_loc = mysqli_prepare($conn, $loc_sql);
+                mysqli_stmt_bind_param($stmt_loc, "i", $row['complaint_id']);
+                mysqli_stmt_execute($stmt_loc);
+                $loc_res = mysqli_stmt_get_result($stmt_loc);
+                $loc = mysqli_fetch_assoc($loc_res);
+                $lat = $loc['location_lat'] ?? 14.2127; // Default to Calamba
+                $lng = $loc['location_lng'] ?? 121.1154;
+                mysqli_stmt_close($stmt_loc);
+
+                // Safe access to sentiment to avoid undefined key warnings
+                $sentiment = $row['sentiment'] ?? '';
+
                 // Fetch assignments for history timeline
                 $assign_sql = "
                     SELECT ca.id, ca.assigned_at, ca.status AS assignment_status, s.name AS staff_name, 
@@ -101,6 +116,31 @@ if ($total_rows > 0) {
                 }
                 mysqli_stmt_close($assign_stmt);
 
+                // Fetch comments for history timeline
+                $comment_sql = "
+                    SELECT cc.comment_id AS id, cc.created_at, cc.commenter_type, cc.commenter_id, cc.comment,
+                           CASE
+                               WHEN cc.commenter_type = 'staff' THEN CONCAT(s.name, ' (Staff)')
+                               WHEN cc.commenter_type = 'user' THEN CONCAT(u.first_name, ' ', u.last_name, ' (Customer)')
+                           END AS commenter_name,
+                           s.role AS staff_role, s.profile_picture AS staff_profile_picture,
+                           u.profile_picture AS user_profile_picture
+                    FROM complaint_comments cc
+                    LEFT JOIN staff s ON cc.commenter_type = 'staff' AND cc.commenter_id = s.staff_id
+                    LEFT JOIN users u ON cc.commenter_type = 'user' AND cc.commenter_id = u.id
+                    WHERE cc.complaint_id = ?
+                    ORDER BY cc.created_at ASC
+                ";
+                $comment_stmt = mysqli_prepare($conn, $comment_sql);
+                mysqli_stmt_bind_param($comment_stmt, "i", $row['complaint_id']);
+                mysqli_stmt_execute($comment_stmt);
+                $comment_res = mysqli_stmt_get_result($comment_stmt);
+                $comments = [];
+                while ($comment = mysqli_fetch_assoc($comment_res)) {
+                    $comments[] = $comment;
+                }
+                mysqli_stmt_close($comment_stmt);
+
                 // Status badge
                 $status_badge = 'bg-gray-100 text-gray-700';
                 if ($row['status'] === 'Pending') $status_badge = 'bg-yellow-50 text-yellow-700 border border-yellow-200';
@@ -108,17 +148,17 @@ if ($total_rows > 0) {
                 if ($row['status'] === 'Resolved') $status_badge = 'bg-green-50 text-green-700 border border-green-200';
                 if ($row['status'] === 'Closed') $status_badge = 'bg-gray-100 text-gray-700 border border-gray-200';
 
-                // Sentiment badge
+                // Sentiment badge (now using safe $sentiment)
                 $sentiment_badge = 'bg-gray-50 text-gray-600 border border-gray-200';
-                if ($row['sentiment'] === 'Positive') $sentiment_badge = 'bg-green-50 text-green-700 border border-green-200';
-                if ($row['sentiment'] === 'Negative') $sentiment_badge = 'bg-red-50 text-red-700 border border-red-200';
+                if ($sentiment === 'Positive') $sentiment_badge = 'bg-green-50 text-green-700 border border-green-200';
+                if ($sentiment === 'Negative') $sentiment_badge = 'bg-red-50 text-red-700 border border-red-200';
 
                 $sentiment_icon = '';
-                if ($row['sentiment'] === 'Positive') {
+                if ($sentiment === 'Positive') {
                     $sentiment_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 flex-shrink-0">
                                             <path fill-rule="evenodd" d="M8.603 3.799A4.49 4.49 0 0 1 12 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 0 1 3.498 1.307 4.491 4.491 0 0 1 1.307 3.497A4.49 4.49 0 0 1 21.75 12a4.49 4.49 0 0 1-1.549 3.397 4.491 4.491 0 0 1-1.307 3.497 4.491 4.491 0 0 1-3.497 1.307A4.49 4.49 0 0 1 12 21.75a4.49 4.49 0 0 1-3.397-1.549 4.49 4.49 0 0 1-3.498-1.306 4.491 4.491 0 0 1-1.307-3.498A4.49 4.49 0 0 1 2.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 0 1 1.307-3.497 4.49 4.49 0 0 1 3.497-1.307Zm7.007 6.387a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clip-rule="evenodd" />
                                        </svg>';
-                } elseif ($row['sentiment'] === 'Negative') {
+                } elseif ($sentiment === 'Negative') {
                     $sentiment_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 flex-shrink-0">
                                             <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
                                        </svg>';
@@ -148,7 +188,7 @@ if ($total_rows > 0) {
                     $assigned_display = '
                     <div class="flex items-center space-x-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400 flex-shrink-0">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12Z" />
                         </svg>
                         <span class="text-gray-400 italic text-sm">Unassigned</span>
                     </div>';
@@ -211,7 +251,7 @@ if ($total_rows > 0) {
                         'details' => [
                             'staff_name' => $assign['staff_name'],
                             'staff_role' => $assign['staff_role'] ?? 'Administrator',
-                            'staff_profile_picture' => $assign['staff_profile_picture'] ? '../' . $assign['staff_profile_picture'] : 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($assign['staff_name'])
+                            'staff_profile_picture' => get_avatar_src($assign['staff_profile_picture'], $assign['staff_name'])
                         ]
                     ];
                     $previous_status = $assign['assignment_status'];
@@ -240,6 +280,24 @@ if ($total_rows > 0) {
                         }
                     }
                 }
+
+                // Add comments to history
+                foreach ($comments as $comment) {
+                    $profile_picture = $comment['commenter_type'] === 'staff' ? get_avatar_src($comment['staff_profile_picture'], $comment['commenter_name']) : get_avatar_src($comment['user_profile_picture'], $comment['commenter_name']);
+                    $status_history[] = [
+                        'timestamp' => $comment['created_at'],
+                        'status' => $row['status'], // Use current status for color
+                        'event' => 'Comment Added',
+                        'details' => [
+                            'commenter_name' => $comment['commenter_name'],
+                            'commenter_type' => $comment['commenter_type'],
+                            'comment_text' => $comment['comment'],
+                            'profile_picture' => $profile_picture,
+                            'role' => $comment['staff_role'] ?? 'Customer'
+                        ]
+                    ];
+                }
+
                 usort($status_history, function($a, $b) {
                     return strtotime($a['timestamp']) - strtotime($b['timestamp']);
                 });
@@ -267,10 +325,10 @@ if ($total_rows > 0) {
                             <?php if ($row['action_due']): ?>
                                 <?php echo $due_display; ?>
                             <?php endif; ?>
-                            <?php if (!empty($row['sentiment'])): ?>
+                            <?php if (!empty($sentiment)): ?>
                                 <span class="sentiment-badge inline-flex items-center gap-1 <?php echo $sentiment_badge; ?>">
                                     <?php echo $sentiment_icon; ?>
-                                    <?php echo htmlspecialchars($row['sentiment']); ?>
+                                    <?php echo htmlspecialchars($sentiment); ?>
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -286,20 +344,55 @@ if ($total_rows > 0) {
                                 </div>
                             <?php endif; ?>
                         </div>
+                        <?php if (!empty($row['location_address'])): ?>
+                        <div class="location-section bg-gray-50 p-3 rounded-md">
+                            <h4 class="text-sm font-medium text-gray-700 mb-2 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2 text-blue-600">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                                </svg>
+                                Location
+                            </h4>
+                            <p class="text-sm text-gray-600 mb-3"><?php echo e($row['location_address']); ?></p>
+                            <button onclick="openMapModal(<?php echo (int)$row['complaint_id']; ?>, <?php echo (float)$lat; ?>, <?php echo (float)$lng; ?>, '<?php echo e($row['location_address']); ?>')" class="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm font-medium flex items-center transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                                </svg>
+                                View on Map
+                            </button>
+                        </div>
+                        <?php endif; ?>
                         <div>
                             <h4 class="text-sm font-medium text-gray-700 mb-2">History Timeline</h4>
                             <div class="relative border-l-2 border-gray-200 ml-6">
                                 <?php foreach ($status_history as $event): ?>
                                     <div class="mb-6 ml-6">
-                                        <div class="absolute w-6 h-6 rounded-full flex items-center justify-center -left-3 <?php echo $event['status'] === 'Pending' ? 'bg-yellow-100' : ($event['status'] === 'In Progress' ? 'bg-blue-100' : ($event['status'] === 'Resolved' ? 'bg-green-100' : 'bg-gray-100')); ?>">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 <?php echo $event['status'] === 'Pending' ? 'text-yellow-600' : ($event['status'] === 'In Progress' ? 'text-blue-600' : ($event['status'] === 'Resolved' ? 'text-green-600' : 'text-gray-600')); ?>">
-                                                <?php if ($event['event'] === 'Complaint Created'): ?>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 0 1-2.25 2.25M16.5 7.5V18a2.25 2.25 0 0 0 2.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 0 0 2.25 2.25h13.5M6 7.5h3v3H6v-3Z" />
-                                                <?php elseif ($event['event'] === 'Assigned to Staff'): ?>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12Z" />
-                                                <?php else: ?>
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                <?php endif; ?>
+                                        <?php
+                                        // Determine dot color and icon based on event
+                                        $dot_class = 'bg-gray-100';
+                                        $icon_class = 'text-gray-600';
+                                        $icon_path = 'M4.5 12.75l6 6 9-13.5'; // Default check
+                                        if ($event['event'] === 'Complaint Created') {
+                                            $dot_class = 'bg-yellow-100';
+                                            $icon_class = 'text-yellow-600';
+                                            $icon_path = 'M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 0 1-2.25 2.25M16.5 7.5V18a2.25 2.25 0 0 0 2.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 0 0 2.25 2.25h13.5M6 7.5h3v3H6v-3Z';
+                                        } elseif ($event['event'] === 'Status Changed') {
+                                            $dot_class = $event['status'] === 'In Progress' ? 'bg-blue-100' : ($event['status'] === 'Resolved' ? 'bg-green-100' : 'bg-gray-100');
+                                            $icon_class = $event['status'] === 'In Progress' ? 'text-blue-600' : ($event['status'] === 'Resolved' ? 'text-green-600' : 'text-gray-600');
+                                        } elseif ($event['event'] === 'Assigned to Staff') {
+                                            $dot_class = 'bg-purple-100';
+                                            $icon_class = 'text-purple-600';
+                                            $icon_path = 'M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12Z';
+                                        } elseif ($event['event'] === 'Comment Added') {
+                                            $dot_class = 'bg-indigo-100';
+                                            $icon_class = 'text-indigo-600';
+                                            $icon_path = 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-4l-4 4z';
+                                        }
+                                        ?>
+                                        <div class="absolute w-6 h-6 rounded-full flex items-center justify-center -left-3 <?php echo $dot_class; ?>">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 <?php echo $icon_class; ?>">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="<?php echo $icon_path; ?>" />
                                             </svg>
                                         </div>
                                         <div class="mt-3 bg-white p-3 rounded-lg shadow-sm border border-gray-100">
@@ -313,8 +406,19 @@ if ($total_rows > 0) {
                                                         <p class="text-xs text-gray-500"><?php echo htmlspecialchars($event['details']['staff_role']); ?></p>
                                                     </div>
                                                 </div>
+                                            <?php elseif ($event['event'] === 'Comment Added' && isset($event['details']['commenter_name'])): ?>
+                                                <div class="flex items-center mt-1 space-x-2">
+                                                    <img src="<?php echo htmlspecialchars($event['details']['profile_picture']); ?>" alt="Commenter Avatar" class="w-5 h-5 rounded-full object-cover">
+                                                    <div>
+                                                        <p class="text-xs text-gray-900"><?php echo htmlspecialchars($event['details']['commenter_name']); ?></p>
+                                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($event['details']['role']); ?></p>
+                                                    </div>
+                                                </div>
+                                                <p class="text-sm text-gray-700 mt-2 italic bg-gray-50 p-2 rounded-md border-l-4 border-indigo-500"><?php echo nl2br(htmlspecialchars($event['details']['comment_text'])); ?></p>
                                             <?php endif; ?>
-                                            <p class="text-xs text-gray-500 mt-1"><?php echo is_array($event['details']) ? 'Status: ' . htmlspecialchars($event['status']) : htmlspecialchars($event['details']); ?></p>
+                                            <?php if ($event['event'] !== 'Comment Added'): ?>
+                                                <p class="text-xs text-gray-500 mt-1"><?php echo is_array($event['details']) ? 'Status: ' . htmlspecialchars($event['status']) : htmlspecialchars($event['details']); ?></p>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
@@ -322,7 +426,7 @@ if ($total_rows > 0) {
                         </div>
                     </div>
                 </div>
-            <?php endwhile; mysqli_stmt_close($list_stmt); ?>
+            <?php endwhile; ?>
         </div>
     <?php endif; ?>
 
@@ -343,6 +447,27 @@ if ($total_rows > 0) {
             </div>
         </div>
     <?php endif; ?>
+
+    <!-- Map Modal -->
+    <div id="mapModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4" onclick="closeMapModal()">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden relative" onclick="event.stopPropagation()">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-xl font-semibold text-gray-900 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2 text-blue-600">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                    </svg>
+                    Complaint Location on Map
+                </h3>
+                <button onclick="closeMapModal()" class="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div id="modalMap" style="height: 70vh; width: 100%;"></div>
+        </div>
+    </div>
 
     <p class="text-xs text-gray-400 mt-4">
         Note: When CWD assigns your ticket to a staff member, you’ll see the assignee’s name, role, and profile here.
@@ -386,12 +511,19 @@ if ($total_rows > 0) {
         color: #374151; 
         word-break: break-word;
     }
+    .location-section {
+        border-left: 3px solid #3b82f6;
+        padding-left: 1rem;
+    }
     .status-badge, .sentiment-badge { 
         border-radius: 0.5rem; 
         padding: 0.25rem 0.5rem; 
         font-size: 0.75rem; 
         font-weight: 600; 
         border-width: 1px; 
+    }
+    .rotate-180 {
+        transform: rotate(180deg);
     }
 </style>
 
@@ -441,4 +573,60 @@ if ($total_rows > 0) {
         // Initial filter
         filterCards();
     });
+
+    // Map Modal Functions
+    let currentMap;
+    function openMapModal(complaintId, lat, lng, address) {
+        const modal = document.getElementById('mapModal');
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // Prevent body scroll
+
+        const mapContainer = document.getElementById('modalMap');
+        if (!currentMap) {
+            currentMap = L.map('modalMap').setView([lat, lng], 16);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(currentMap);
+
+            // Custom blue marker
+            const customIcon = L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            L.marker([lat, lng], { icon: customIcon }).addTo(currentMap)
+                .bindPopup(`<b>Complaint #${complaintId}</b><br>${address}`)
+                .openPopup();
+        } else {
+            currentMap.setView([lat, lng], 16);
+            // Remove existing markers
+            currentMap.eachLayer(function (layer) {
+                if (layer instanceof L.Marker) {
+                    currentMap.removeLayer(layer);
+                }
+            });
+            // Add new marker
+            const customIcon = L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+            L.marker([lat, lng], { icon: customIcon }).addTo(currentMap)
+                .bindPopup(`<b>Complaint #${complaintId}</b><br>${address}`)
+                .openPopup();
+        }
+    }
+
+    function closeMapModal() {
+        const modal = document.getElementById('mapModal');
+        modal.classList.add('hidden');
+        document.body.style.overflow = 'auto'; // Restore body scroll
+    }
 </script>

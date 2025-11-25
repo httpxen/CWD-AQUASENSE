@@ -1,41 +1,23 @@
 <?php
+ob_start();
 include 'db/db.php';
 session_start();
 
-// Load .env file
-if (file_exists(__DIR__ . '/.env')) {
-    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (strpos(trim($line), '#') === 0) continue;
-        if (strpos($line, '=') !== false) {
-            list($key, $value) = explode('=', $line, 2);
-            $key = trim($key);
-            $value = trim($value);
-            if (!array_key_exists($key, $_ENV)) {
-                $_ENV[$key] = $value;
-                putenv("{$key}={$value}");
-            }
-        }
-    }
-}
-
-// REQUIRE LIBPHONENUMBER
+require_once 'config/env.php';
 require_once 'vendor/autoload.php';
 use libphonenumber\PhoneNumberUtil;
 use libphonenumber\PhoneNumberFormat;
 
-/** =========================
- *  CONFIG
- *  ========================= */
 define('TERMS_VERSION', '2025-09-23');
 date_default_timezone_set('Asia/Manila');
 
 $timeout_duration = 1800;
 if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-  session_unset();
-  session_destroy();
-  header("Location: login.php?message=Session expired, please log in again.");
-  exit();
+    session_unset();
+    session_destroy();
+    ob_end_clean();
+    header("Location: login.php?message=Session expired, please log in again.");
+    exit();
 }
 $_SESSION['LAST_ACTIVITY'] = time();
 
@@ -44,129 +26,146 @@ require_once 'config/email.php';
 require_once 'config/notification.php';
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-  $username       = trim($_POST['username'] ?? '');
-  $first_name     = trim($_POST['first_name'] ?? '');
-  $middle_name    = trim($_POST['middle_name'] ?? '');
-  $last_name      = trim($_POST['last_name'] ?? '');
-  $email          = trim($_POST['email'] ?? '');
-  $contact_number = trim($_POST['contact_number'] ?? '');
-  $password       = $_POST['password'] ?? '';
-  $confirm        = $_POST['confirm_password'] ?? '';
-  $terms          = isset($_POST['terms']);
-  $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
+    $username       = trim($_POST['username'] ?? '');
+    $first_name     = trim($_POST['first_name'] ?? '');
+    $middle_name    = trim($_POST['middle_name'] ?? '');
+    $last_name      = trim($_POST['last_name'] ?? '');
+    $email          = trim($_POST['email'] ?? '');
+    $contact_number = trim($_POST['contact_number'] ?? '');
+    $password       = $_POST['password'] ?? '';
+    $confirm        = $_POST['confirm_password'] ?? '';
+    $terms          = isset($_POST['terms']);
+    $turnstile_response = $_POST['cf-turnstile-response'] ?? '';
 
-  $errors = [];
+    $errors = [];
 
-  // REQUIRED FIELDS
-  if (empty($username)) $errors[] = "Username is required.";
-  if (empty($first_name)) $errors[] = "First name is required.";
-  if (empty($last_name)) $errors[] = "Last name is required.";
-  if (empty($email)) $errors[] = "Email address is required.";
-  if (empty($password)) $errors[] = "Password is required.";
-  if (empty($confirm)) $errors[] = "Please confirm your password.";
+    if (empty($username)) $errors[] = "Username is required.";
+    if (empty($first_name)) $errors[] = "First name is required.";
+    if (empty($last_name)) $errors[] = "Last name is required.";
+    if (empty($email)) $errors[] = "Email address is required.";
+    if (empty($password)) $errors[] = "Password is required.";
+    if (empty($confirm)) $errors[] = "Please confirm your password.";
 
-  // OTHER VALIDATIONS
-  if (!$terms) $errors[] = "Please agree to the Terms and Conditions to continue.";
-  if ($password !== $confirm) $errors[] = "Passwords do not match.";
-  if (strlen($password) < 8) $errors[] = "Password must be at least 8 characters long.";
-  if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Please provide a valid email address.";
+    if (!$terms) $errors[] = "Please agree to the Terms and Conditions to continue.";
+    if ($password !== $confirm) $errors[] = "Passwords do not match.";
+    if (strlen($password) < 8) $errors[] = "Password must be at least 8 characters long.";
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = "Please provide a valid email address.";
 
-  // INTERNATIONAL PHONE VALIDATION
-  if (empty($contact_number)) {
-    $errors[] = "Contact number is required.";
-  } else {
-    $phoneUtil = PhoneNumberUtil::getInstance();
-    try {
-      $phoneNumberProto = $phoneUtil->parse($contact_number, "ZZ");
-      if (!$phoneUtil->isValidNumber($phoneNumberProto)) {
-        $errors[] = "Please enter a valid phone number with correct country code.";
-      } else {
-        $contact_number = $phoneUtil->format($phoneNumberProto, PhoneNumberFormat::E164);
-      }
-    } catch (\libphonenumber\NumberParseException $e) {
-      $errors[] = "Invalid phone number format.";
-    }
-  }
-
-  // reCAPTCHA VALIDATION
-  $recaptcha_secret = $_ENV['RECAPTCHA_SECRET_KEY'] ?? '';
-  if (empty($recaptcha_response)) {
-    $errors[] = "Please complete the reCAPTCHA verification.";
-  } elseif (!empty($recaptcha_secret)) {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    $verify_url = 'https://www.google.com/recaptcha/api/siteverify';
-    $response = file_get_contents("{$verify_url}?secret={$recaptcha_secret}&response={$recaptcha_response}&remoteip={$ip}");
-    $response_data = json_decode($response);
-
-    if (!$response_data || !isset($response_data->success) || !$response_data->success) {
-      $errors[] = "reCAPTCHA verification failed. Please try again.";
-    }
-  } else {
-    $errors[] = "reCAPTCHA secret key is missing.";
-  }
-
-  if (empty($errors)) {
-    $stmt = $conn->prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    $stmt->store_result();
-    if ($stmt->num_rows > 0) $errors[] = "Username already exists.";
-    $stmt->close();
-
-    $stmt = $conn->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $stmt->store_result();
-    if ($stmt->num_rows > 0) $errors[] = "Email already registered.";
-    $stmt->close();
-
-    $stmt = $conn->prepare("SELECT 1 FROM users WHERE contact_number = ? LIMIT 1");
-    $stmt->bind_param("s", $contact_number);
-    $stmt->execute();
-    $stmt->store_result();
-    if ($stmt->num_rows > 0) $errors[] = "Contact number already registered.";
-    $stmt->close();
-  }
-
-  if (empty($errors)) {
-    $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-    $ip = $_SERVER['REMOTE_ADDR'] ?? null;
-    $ua = $_SERVER['HTTP_USER_AGENT'] ?? null;
-    $terms_version = TERMS_VERSION;
-
-    $stmt = $conn->prepare("
-      INSERT INTO users
-      (username, first_name, middle_name, last_name, email, contact_number, password, created_at,
-       accepted_terms_version, accepted_terms_at, accepted_terms_ip, accepted_terms_ua)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), ?, ?)
-    ");
-    $stmt->bind_param(
-      "ssssssssss",
-      $username, $first_name, $middle_name, $last_name, $email, $contact_number,
-      $hashed_password, $terms_version, $ip, $ua
-    );
-
-    if ($stmt->execute()) {
-      $stmt->close();
-      $emailService = new EmailService();
-      $emailService->sendWelcomeEmail($email, $username);
-
-      $userDetails = [
-        'username' => $username, 'first_name' => $first_name, 'middle_name' => $middle_name,
-        'last_name' => $last_name, 'email' => $email, 'contact_number' => $contact_number, 'ip' => $ip
-      ];
-      $adminService = new AdminNotification();
-      $adminService->sendRegistrationAlert($userDetails);
-
-      header("Location: login.php?message=Account created successfully! Please log in.");
-      exit();
+    if (empty($contact_number)) {
+        $errors[] = "Contact number is required.";
     } else {
-      $error = "Registration failed. Please try again.";
-      $stmt->close();
+        $phoneUtil = PhoneNumberUtil::getInstance();
+        try {
+            $phoneNumberProto = $phoneUtil->parse($contact_number, "ZZ");
+            if (!$phoneUtil->isValidNumber($phoneNumberProto)) {
+                $errors[] = "Please enter a valid phone number with correct country code.";
+            } else {
+                $contact_number = $phoneUtil->format($phoneNumberProto, PhoneNumberFormat::E164);
+            }
+        } catch (\libphonenumber\NumberParseException $e) {
+            $errors[] = "Invalid phone number format.";
+        }
     }
-  } else {
-    $error = implode("<br>", $errors);
-  }
+
+    // ==================== CLOUDFLARE TURNSTILE VERIFICATION ====================
+    $turnstile_secret = $_ENV['TURNSTILE_SECRET_KEY'] ?? '';
+    if (empty($turnstile_response)) {
+        $errors[] = "Please complete the security check.";
+    } elseif (!empty($turnstile_secret)) {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+        $verify = file_get_contents("https://challenges.cloudflare.com/turnstile/v0/siteverify", false, stream_context_create([
+            'http' => [
+                'method'  => 'POST',
+                'header'  => 'Content-Type: application/x-www-form-urlencoded',
+                'content' => http_build_query([
+                    'secret'   => $turnstile_secret,
+                    'response' => $turnstile_response,
+                    'remoteip' => $ip
+                ])
+            ]
+        ]));
+        $result = json_decode($verify);
+
+        if (!$result || !$result->success) {
+            $errors[] = "Security check failed. Please try again.";
+        }
+    } else {
+        $errors[] = "Security system not configured.";
+    }
+
+    if (empty($errors)) {
+        $stmt = $conn->prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1");
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) $errors[] = "Username already exists.";
+        $stmt->close();
+
+        $stmt = $conn->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) $errors[] = "Email already registered.";
+        $stmt->close();
+
+        $stmt = $conn->prepare("SELECT 1 FROM users WHERE contact_number = ? LIMIT 1");
+        $stmt->bind_param("s", $contact_number);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) $errors[] = "Contact number already registered.";
+        $stmt->close();
+    }
+
+    if (empty($errors)) {
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $terms_version = TERMS_VERSION;
+
+        $stmt = $conn->prepare("
+            INSERT INTO users
+            (username, first_name, middle_name, last_name, email, contact_number, password, created_at,
+             accepted_terms_version, accepted_terms_at, accepted_terms_ip, accepted_terms_ua)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), ?, ?)
+        ");
+        $stmt->bind_param(
+            "ssssssssss",
+            $username, $first_name, $middle_name, $last_name, $email, $contact_number,
+            $hashed_password, $terms_version, $ip, $ua
+        );
+
+        if ($stmt->execute()) {
+            $stmt->close();
+
+            $email_sent = false;
+            $admin_sent = false;
+            try {
+                $emailService = new EmailService();
+                $email_sent = $emailService->sendWelcomeEmail($email, $username);
+                $userDetails = [
+                    'username' => $username, 'first_name' => $first_name, 'middle_name' => $middle_name,
+                    'last_name' => $last_name, 'email' => $email, 'contact_number' => $contact_number, 'ip' => $ip
+                ];
+                $adminService = new AdminNotification();
+                $admin_sent = $adminService->sendRegistrationAlert($userDetails);
+            } catch (Exception $e) {
+                error_log("Email sending failed: " . $e->getMessage());
+            }
+
+            $success_msg = $email_sent && $admin_sent
+                ? "Account created successfully! Please check your email."
+                : "Account created! Please log in.";
+
+            ob_end_clean();
+            header("Location: login.php?reg_success=" . urlencode($success_msg));
+            exit();
+        } else {
+            $error = "Registration failed. Please try again.";
+            $stmt->close();
+        }
+    } else {
+        $error = implode("<br>", $errors);
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -181,158 +180,44 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.1.4/css/intlTelInput.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.1.4/js/intlTelInput.min.js"></script>
-  <!-- reCAPTCHA v2 Script -->
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+
+  <!-- CLOUDFLARE TURNSTILE -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
   <style>
-    /* BACKGROUND + OVERLAY */
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background-image: url('assets/icons/CWD.jpg');
-      background-size: cover;
-      background-position: center;
-      background-attachment: fixed;
-      background-repeat: no-repeat;
-      min-height: 100vh;
-      position: relative;
-    }
-
-    body::before {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(255, 255, 255, 0.90);
-      backdrop-filter: blur(1px);
-      z-index: 0;
-    }
-
-    .min-h-screen > * {
-      position: relative;
-      z-index: 1;
-    }
-
-    /* CARD GLASS EFFECT */
-    .card {
-      background: rgba(255, 255, 255, 0.94) !important;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid rgba(255, 255, 255, 0.4);
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-      border-radius: 1.5rem;
-    }
-
-    /* FORM INPUTS */
-    .form-input {
-      transition: all .2s cubic-bezier(.4,0,.2,1);
-      background: linear-gradient(#fff,#fff) padding-box,
-                  linear-gradient(to right,#3b82f6,#1d4ed8) border-box;
-      border: 2px solid transparent;
-      border-radius: 0.75rem;
-    }
-    .form-input:focus {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 25px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05);
-    }
-
-    /* BUTTON */
-    .btn-primary {
-      transition: all .2s cubic-bezier(.4,0,.2,1);
-      background: linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%);
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 20px 25px -5px rgba(0,0,0,.1), 0 10px 10px -5px rgba(0,0,0,.04);
-    }
-
-    /* CHARACTER */
-    @media (min-width: 1024px) {
-      .character-desktop {
-        position: absolute;
-        left: 10%;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 350px;
-        z-index: 10;
-        filter: drop-shadow(0 10px 20px rgba(0,0,0,0.15));
-      }
-      .character-desktop img {
-        width: 100%;
-        height: auto;
-      }
-    }
-
-    /* NAME GRID */
-    .name-section {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 1rem;
-    }
-    @media (max-width: 640px) {
-      .name-section { grid-template-columns: 1fr; gap: .75rem; }
-    }
-
-    /* TOAST */
-    .toast-container {
-      position: fixed;
-      bottom: 1rem;
-      right: 1rem;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-      max-width: 420px;
-    }
-    .toast {
-      animation: slideInRight 0.4s ease-out forwards;
-      min-width: 300px;
-      max-width: 100%;
-    }
-    @keyframes slideInRight {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    .toast-error {
-      background: linear-gradient(#fef2f2, #fee2e2);
-      border: 1px solid #fca5a5;
-      color: #991b1b;
-    }
-    .toast-success {
-      background: linear-gradient(#f0fdf4, #dcfce7);
-      border: 1px solid #86efac;
-      color: #166534;
-    }
-
-    /* BOUNCE */
-    @keyframes bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-12px); }
-    }
-    .animate-bounce { animation: bounce 2s infinite; }
-
-    /* INTL TEL INPUT */
-    .iti { width: 100% !important; }
-    .iti__flag { background-image: url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.1.4/img/flags.png"); }
-    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-      .iti__flag { background-image: url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.1.4/img/flags@2x.png"); }
-    }
-
-    .group:focus-within .svg-icon { color: #3b82f6; }
-    .password-toggle { cursor: pointer; transition: color .2s; }
-    .password-toggle:hover { color: #3b82f6; }
+    body {font-family:'Inter',sans-serif;background-image:url('assets/icons/CWD.jpg');background-size:cover;background-position:center;background-attachment:fixed;background-repeat:no-repeat;min-height:100vh;position:relative;}
+    body::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.90);backdrop-filter:blur(1px);z-index:0;}
+    .min-h-screen>*{position:relative;z-index:1;}
+    .card{background:rgba(255,255,255,0.94)!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.4);box-shadow:0 12px 40px rgba(0,0,0,0.15);border-radius:1.5rem;}
+    .form-input{transition:all .2s cubic-bezier(.4,0,.2,1);background:linear-gradient(#fff,#fff) padding-box,linear-gradient(to right,#3b82f6,#1d4ed8) border-box;border:2px solid transparent;border-radius:0.75rem;}
+    .form-input:focus{transform:translateY(-1px);box-shadow:0 10px 25px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);}
+    .btn-primary{transition:all .2s cubic-bezier(.4,0,.2,1);background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%);box-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -1px rgba(0,0,0,.06);}
+    .btn-primary:hover{transform:translateY(-2px);box-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 10px 10px -5px rgba(0,0,0,.04);}
+    @media (min-width:1024px){.character-desktop{position:absolute;left:10%;top:50%;transform:translateY(-50%);width:350px;z-index:10;filter:drop-shadow(0 10px 20px rgba(0,0,0,0.15));}}
+    .character-desktop img{width:100%;height:auto;}
+    .name-section{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;}
+    @media (max-width:640px){.name-section{grid-template-columns:1fr;gap:.75rem;}}
+    .toast-container{position:fixed;bottom:1rem;right:1rem;z-index:9999;display:flex;flex-direction:column;gap:0.75rem;max-width:420px;}
+    .toast{animation:slideInRight .4s ease-out forwards;min-width:300px;max-width:100%;}
+    @keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+    .toast-error{background:linear-gradient(#fef2f2,#fee2e2);border:1px solid #fca5a5;color:#991b1b;}
+    .toast-success{background:linear-gradient(#f0fdf4,#dcfce7);border:1px solid #86efac;color:#166534;}
+    @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}.animate-bounce{animation:bounce 2s infinite;}
+    .iti{width:100%!important;}
+    .iti__flag{background-image:url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.1.4/img/flags.png");}
+    @media (-webkit-min-device-pixel-ratio:2),(min-resolution:192dpi){.iti__flag{background-image:url("https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/18.1.4/img/flags@2x.png");}}
+    .group:focus-within .svg-icon{color:#3b82f6;}
+    .password-toggle{cursor:pointer;transition:color .2s;}
+    .password-toggle:hover{color:#3b82f6;}
   </style>
 </head>
 <body class="bg-gray-50">
   <div class="min-h-screen flex flex-col justify-center py-8 sm:px-6 lg:px-8 relative overflow-hidden">
-
-    <!-- DESKTOP CHARACTER -->
     <div class="hidden lg:block character-desktop">
       <img src="assets/icons/Register Here.png" alt="Register Here!" class="animate-bounce">
     </div>
 
     <div class="sm:mx-auto sm:w-full sm:max-w-lg relative z-20">
-
-      <!-- LOGO & TITLE -->
       <div class="text-center mb-8">
         <div class="logo-container w-16 h-16 flex items-center justify-center mx-auto rounded-2xl shadow-sm mb-6 p-1">
           <div class="bg-white rounded-xl w-14 h-14 flex items-center justify-center shadow-sm">
@@ -346,7 +231,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         </p>
       </div>
 
-      <!-- FORM CARD -->
       <div class="card py-7 px-6 shadow-xl rounded-2xl">
         <?php if (!empty($_GET['message'])): ?>
           <div class="mb-6 p-4 rounded-lg bg-green-50 border border-green-200 text-green-800 flex items-start gap-3">
@@ -361,20 +245,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           <script>
             document.addEventListener('DOMContentLoaded', function() {
               showToast(<?= json_encode(explode("<br>", $error)) ?>, 'error');
-              if (typeof grecaptcha !== 'undefined') grecaptcha.reset();
             });
           </script>
         <?php endif; ?>
 
         <form class="space-y-5" action="" method="POST" novalidate id="registerForm">
-
           <!-- Username -->
           <div class="group">
             <label for="username" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-              </svg>
-              Username
+              </svg> Username
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -392,8 +273,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <label for="first_name" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-                </svg>
-                First Name
+                </svg> First Name
               </label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -409,8 +289,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <label for="middle_name" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-                </svg>
-                Middle Name
+                </svg> Middle Name
               </label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -426,8 +305,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <label for="last_name" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-                </svg>
-                Last Name
+                </svg> Last Name
               </label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -445,8 +323,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <label for="email" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-              </svg>
-              Email Address
+              </svg> Email Address
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -463,8 +340,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <label for="contact_number" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-1.484-.382-3.03-1.285-4.203-2.458-.615-.615-1.43-1.431-2.458-2.458l1.293-.97c.363-.27.527-.733.417-1.173L9.457 5.628c-.125-.5-.575-.852-1.091-.852H7.5a2.25 2.25 0 0 0-2.25 2.25Z" />
-              </svg>
-              Contact Number
+              </svg> Contact Number
             </label>
             <div class="relative">
               <input id="contact_number" name="contact_number" type="tel" required class="form-input block w-full px-3 py-3 border-2 border-transparent placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-0 sm:text-sm" placeholder="Enter phone number" autocomplete="tel" value="<?= isset($_POST['contact_number']) ? htmlspecialchars($_POST['contact_number']) : '' ?>">
@@ -477,8 +353,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <label for="password" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
-              </svg>
-              Password
+              </svg> Password
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
@@ -501,14 +376,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           <div class="group">
             <label for="confirm_password" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 0 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
-              </svg>
-              Confirm Password
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+              </svg> Confirm Password
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                 <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 svg-icon text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16.5 10.5V6.75a4.5 4.5 0 0 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
                 </svg>
               </div>
               <input id="confirm_password" name="confirm_password" type="password" required class="form-input block w-full px-11 py-3 pr-10 border-2 border-transparent placeholder-gray-400 text-gray-900 rounded-xl focus:outline-none focus:ring-0 sm:text-sm peer" placeholder="Confirm your password" autocomplete="new-password">
@@ -539,13 +413,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
           </div>
 
-          <!-- reCAPTCHA v2 -->
+          <!-- CLOUDFLARE TURNSTILE -->
           <div class="mt-5">
-            <div class="g-recaptcha" data-sitekey="<?= htmlspecialchars($_ENV['RECAPTCHA_SITE_KEY'] ?? '') ?>"></div>
-            <p class="mt-1 text-xs text-gray-500">This site is protected by reCAPTCHA and the Google 
-              <a href="https://policies.google.com/privacy" target="_blank" class="text-blue-600 underline">Privacy Policy</a> and 
-              <a href="https://policies.google.com/terms" target="_blank" class="text-blue-600 underline">Terms of Service</a> apply.
-            </p>
+            <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($_ENV['TURNSTILE_SITE_KEY'] ?? '') ?>" data-theme="light"></div>
+            <p class="mt-1 text-xs text-gray-500">This site is protected by Cloudflare Turnstile.</p>
           </div>
 
           <!-- Submit -->
@@ -577,10 +448,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
   </div>
 
-  <!-- TOAST CONTAINER -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- TERMS MODAL -->
+  <!-- Terms & Privacy Modals (same as your original) -->
   <div id="termsModal" class="fixed inset-0 hidden bg-black bg-opacity-40 z-50 items-center justify-center flex">
     <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-2xl max-h-[80vh] overflow-hidden">
       <div class="px-6 py-4 border-b flex items-center justify-between">
@@ -595,7 +465,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           <li><strong>User Content</strong> – You own your content; limited license to operate the Service.</li>
           <li><strong>Privacy</strong> – See our <a href="privacy.php" target="_blank" class="text-blue-600 underline">Privacy Notice</a>.</li>
           <li><strong>Availability</strong> – Possible maintenance/downtime.</li>
-          <li><strong>Security</strong> – Reasonable safeguards; report incidents.</li>
+          <li><strong>Security</strong></li>
           <li><strong>Termination</strong> – We may suspend/terminate for violations.</li>
           <li><strong>Changes</strong> – We may update Terms; re-consent may be required.</li>
           <li><strong>Law</strong> – Governed by Philippine law (venue: Laguna).</li>
@@ -608,7 +478,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
   </div>
 
-  <!-- PRIVACY MODAL -->
   <div id="privacyModal" class="fixed inset-0 hidden bg-black bg-opacity-40 z-50 items-center justify-center flex">
     <div class="bg-white rounded-2xl shadow-2xl w-11/12 max-w-2xl max-h-[80vh] overflow-hidden">
       <div class="px-6 py-4 border-b flex items-center justify-between">
@@ -652,7 +521,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       if (Array.isArray(messages)) {
         content = `
           <div class="flex-1">
-            <p class="font-semibold mb-1">${messages.length > 1 ? 'Please fix the following:' : 'Error:'}</p>
+            <p class="font-semibold mb-1">${messages.length > 1 ? 'Please fix the following:' : 'Success:'}</p>
             <ul class="list-disc list-inside space-y-1">
               ${messages.map(msg => `<li>${msg}</li>`).join('')}
             </ul>
@@ -704,16 +573,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         input.value = iti.getNumber();
       }
 
-      // reCAPTCHA check
-      const recaptchaResponse = document.querySelector('.g-recaptcha-response')?.value;
-      if (!recaptchaResponse) {
-        errors.push("Please complete the reCAPTCHA verification.");
-      }
-
       if (errors.length > 0) {
         e.preventDefault();
         showToast(errors, 'error');
-        if (typeof grecaptcha !== 'undefined') grecaptcha.reset();
       }
     });
 
@@ -736,3 +598,4 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
   </script>
 </body>
 </html>
+<?php ob_end_flush(); ?>

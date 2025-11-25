@@ -3,6 +3,10 @@ include 'db/db.php';
 session_name('AdminSession'); // Separate session for admins
 session_start();
 
+require_once 'config/env.php';
+
+date_default_timezone_set('Asia/Manila');
+
 // Session timeout duration (30 minutes)
 $timeout_duration = 1800;
 
@@ -15,42 +19,76 @@ if (isset($_SESSION['STAFF_LAST_ACTIVITY']) && (time() - $_SESSION['STAFF_LAST_A
 }
 $_SESSION['STAFF_LAST_ACTIVITY'] = time();
 
+$error = "";
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = $_POST['password'];
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-    $sql = "SELECT staff_id, name, email, role, password FROM staff WHERE email = ? LIMIT 1";
-    $stmt = mysqli_prepare($conn, $sql);
-    mysqli_stmt_bind_param($stmt, "s", $email);
-    mysqli_stmt_execute($stmt);
-    $result = mysqli_stmt_get_result($stmt);
-
-    if ($result && mysqli_num_rows($result) == 1) {
-        $row = mysqli_fetch_assoc($result);
-
-        if (password_verify($password, $row['password'])) {
-            $_SESSION['staff_email'] = $row['email'];
-            $_SESSION['staff_name'] = $row['name'];
-            $_SESSION['staff_id'] = $row['staff_id'];
-            $_SESSION['staff_role'] = $row['role'];
-            $_SESSION['STAFF_LAST_ACTIVITY'] = time();
-
-            // Role-based redirect (e.g., Admin to full dashboard)
-            if ($row['role'] == 'Admin') {
-                header("Location: admin/dashboard.php");
-            } elseif ($row['role'] == 'Employee') {
-                header("Location: employees/dashboard.php");
-            } elseif ($row['role'] == 'Manager') {
-                header("Location: manager/dashboard.php");
-            }
-            exit();
-        } else {
-            $error = "Invalid password.";
-        }
+    if (empty($email)) {
+        $error = "Email is required.";
+    } elseif (empty($password)) {
+        $error = "Password is required.";
     } else {
-        $error = "No account found with that email.";
+        // ==================== CLOUDFLARE TURNSTILE VERIFICATION ====================
+        $turnstile_response = $_POST['cf-turnstile-response'] ?? '';
+        $turnstile_secret = $_ENV['TURNSTILE_SECRET_KEY'] ?? '';
+        if (empty($turnstile_response)) {
+            $error = "Please complete the security check.";
+        } elseif (!empty($turnstile_secret)) {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+            $verify = file_get_contents("https://challenges.cloudflare.com/turnstile/v0/siteverify", false, stream_context_create([
+                'http' => [
+                    'method'  => 'POST',
+                    'header'  => 'Content-Type: application/x-www-form-urlencoded',
+                    'content' => http_build_query([
+                        'secret'   => $turnstile_secret,
+                        'response' => $turnstile_response,
+                        'remoteip' => $ip
+                    ])
+                ]
+            ]));
+            $result = json_decode($verify);
+
+            if (!$result || !$result->success) {
+                $error = "Security check failed. Please try again.";
+            }
+        } else {
+            $error = "Security system not configured.";
+        }
     }
-    mysqli_stmt_close($stmt);
+
+    if (empty($error)) {
+        $sql = "SELECT staff_id, name, email, role, password FROM staff WHERE email = ? LIMIT 1";
+        $stmt = mysqli_prepare($conn, $sql);
+        mysqli_stmt_bind_param($stmt, "s", $email);
+        mysqli_stmt_execute($stmt);
+        $result = mysqli_stmt_get_result($stmt);
+
+        if ($result && mysqli_num_rows($result) == 1) {
+            $row = mysqli_fetch_assoc($result);
+
+            if (password_verify($password, $row['password'])) {
+                $_SESSION['staff_email'] = $row['email'];
+                $_SESSION['staff_name'] = $row['name'];
+                $_SESSION['staff_id'] = $row['staff_id'];
+                $_SESSION['staff_role'] = $row['role'];
+                $_SESSION['STAFF_LAST_ACTIVITY'] = time();
+
+                // Role-based redirect (e.g., Admin to full dashboard)
+                if ($row['role'] == 'Admin') {
+                    header("Location: admin/dashboard.php");
+                } elseif ($row['role'] == 'Employee') {
+                    header("Location: employees/dashboard.php");
+                }
+                exit();
+            } else {
+                $error = "Invalid password.";
+            }
+        } else {
+            $error = "No account found with that email.";
+        }
+        mysqli_stmt_close($stmt);
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -63,14 +101,56 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- CLOUDFLARE TURNSTILE -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
   <style>
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-image: url('assets/icons/CWD.jpg');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      min-height: 100vh;
+      position: relative;
     }
+
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255, 255, 255, 0.90);
+      backdrop-filter: blur(1px);
+      z-index: 0;
+    }
+
+    .min-h-screen > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.94) !important;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+      border-radius: 1.5rem;
+    }
+
+    .logo-container {
+      background: linear-gradient(135deg, #eff6ff, #dbeafe);
+      border: 1px solid rgba(59, 130, 246, 0.1);
+    }
+
     .form-input {
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       background: linear-gradient(white, white) padding-box, 
                   linear-gradient(to right, #3b82f6, #1d4ed8) border-box;
+      border: 2px solid transparent;
+      border-radius: 0.75rem;
     }
     .form-input:focus {
       transform: translateY(-1px);
@@ -85,14 +165,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       transform: translateY(-2px);
       box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
-    .card {
-      background: linear-gradient(145deg, #ffffff, #f8fafc);
-      border: 1px solid rgba(0, 0, 0, 0.05);
-    }
-    .logo-container {
-      background: linear-gradient(135deg, #eff6ff, #dbeafe);
-      border: 1px solid rgba(59, 130, 246, 0.1);
-    }
+
     @keyframes fadeInUp {
       from {
         opacity: 0;
@@ -106,6 +179,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     .fade-in-up {
       animation: fadeInUp 0.6s ease-out;
     }
+
     .svg-icon {
       transition: color 0.2s ease-in-out;
     }
@@ -126,9 +200,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </head>
 <body class="bg-gray-50">
   <div class="min-h-screen flex flex-col justify-center py-8 sm:px-6 lg:px-8 relative overflow-hidden">
-    
-    <!-- Subtle Background Pattern -->
-    <div class="absolute inset-0 bg-gradient-to-br from-blue-50/20 via-white/50 to-indigo-50/20"></div>
     
     <div class="sm:mx-auto sm:w-full sm:max-w-md relative z-10 fade-in-up">
       
@@ -260,6 +331,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
           </div>
 
+          <!-- CLOUDFLARE TURNSTILE -->
+          <div class="mt-5">
+            <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($_ENV['TURNSTILE_SITE_KEY'] ?? '') ?>" data-theme="light"></div>
+            <p class="mt-1 text-xs text-gray-500">This site is protected by Cloudflare Turnstile.</p>
+          </div>
+
           <!-- Submit Button -->
           <div>
             <button
@@ -274,7 +351,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           </div>
         </form>
 
-      <!-- Footer -->
+      </div>
+
+      <!-- Footer (Moved below the form card) -->
       <div class="mt-10 text-center">
         <p class="text-xs text-gray-500 leading-5">
           <i class="fas fa-shield-alt text-blue-600 mr-1"></i>
