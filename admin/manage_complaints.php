@@ -1,33 +1,30 @@
 <?php
-include 'session_check.php'; // DB connection + session
-// Session timeout (30 mins)
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    header("Location: login.php?message=Please log in.");
+include 'session_check.php'; // Handles DB, session validation, timeout, and updates STAFF_LAST_ACTIVITY
+
+// Get staff_id from session (assuming set during login)
+$staff_id = $_SESSION['staff_id'] ?? null;
+if (!$staff_id) {
+    header("Location: ../admin_login.php?message=Please log in as admin.");
     exit();
 }
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: login.php?message=Session expired.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-$staff_id = $_SESSION['staff_id'];
+
 // CSRF Token
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
+
 // Helpers
 function e($str) { return htmlspecialchars((string)$str, ENT_QUOTES, 'UTF-8'); }
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) return '../' . $profile_picture;
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
+
 // Constants
 $ALLOWED_CATEGORIES = ['Billing','Water Quality','Service Interruption','Meter / Leakage','New Connection / Disconnection','Customer Service','Others'];
 $ALLOWED_STATUSES = ['Pending', 'In Progress', 'Resolved', 'Closed'];
+
 // === EDIT COMMENT HANDLER ===
 if (isset($_POST['edit_comment'])) {
     header('Content-Type: application/json');
@@ -75,6 +72,7 @@ if (isset($_POST['edit_comment'])) {
     echo json_encode(['success' => true, 'msg' => 'Comment updated successfully.']);
     exit;
 }
+
 // === PDF EXPORT WITH MODAL ===
 if (isset($_POST['export_pdf'])) {
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
@@ -215,6 +213,7 @@ if (isset($_POST['export_pdf'])) {
     $pdf->Output($filename, 'D');
     exit;
 }
+
 // === LIST VIEW ===
 $status = isset($_GET['status']) ? $_GET['status'] : '';
 $category = isset($_GET['category']) ? $_GET['category'] : '';
@@ -390,7 +389,7 @@ mysqli_stmt_close($stmt);
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 0 1 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 1 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                         </svg>
                         View Feedback
                     </a>
@@ -471,7 +470,7 @@ mysqli_stmt_close($stmt);
                             </svg>
                             <input type="text" id="globalSearch" placeholder="Search complaints..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200" value="<?php echo e($q); ?>">
                         </div>
-                
+               
                         <!-- Filters -->
                         <div class="flex flex-wrap gap-2 items-center">
                             <!-- Status Filter -->
@@ -488,7 +487,7 @@ mysqli_stmt_close($stmt);
                                     </svg>
                                 </div>
                             </div>
-                    
+                   
                             <!-- Category Filter -->
                             <div class="relative">
                                 <select id="categoryFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
@@ -503,7 +502,7 @@ mysqli_stmt_close($stmt);
                                     </svg>
                                 </div>
                             </div>
-                    
+                   
                             <!-- Clear Filters -->
                             <button id="clearFilters" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200">Clear</button>
                             <!-- Export PDF -->

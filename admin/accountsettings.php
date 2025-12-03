@@ -2,24 +2,6 @@
 include 'session_check.php'; // From Step 2
 
 // ---------------------------
-// Session timeout (30 minutes)
-// ---------------------------
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    header("Location: login.php?message=Please log in to access the dashboard.");
-    exit();
-}
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: login.php?message=Session expired, please log in again.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-
-$staff_id = $_SESSION['staff_id'];
-
-// ---------------------------
 // CSRF token
 // ---------------------------
 if (empty($_SESSION['csrf_token'])) {
@@ -44,11 +26,12 @@ function get_avatar_src($profile_picture, $name) {
 $alerts = []; // [ ['type' => 'success'|'error'|'info', 'msg' => '...'] ]
 
 // ---------------------------
-// Fetch staff info
+// Fetch staff info using email from session
 // ---------------------------
-$staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
+$staff_email = $_SESSION['staff_email'];
+$staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE email = ?";
 $stmt = mysqli_prepare($conn, $staff_query);
-mysqli_stmt_bind_param($stmt, "i", $staff_id);
+mysqli_stmt_bind_param($stmt, "s", $staff_email);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $staff = mysqli_fetch_assoc($result);
@@ -59,6 +42,8 @@ if (!$staff) {
     header("Location: login.php?message=Account not found.");
     exit();
 }
+$staff_id = $staff['staff_id'];
+mysqli_stmt_close($stmt);
 
 // ---------------------------
 // Handle POST actions
@@ -103,7 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $alerts[] = ['type' => 'error', 'msg' => 'Failed to update profile. Please try again.'];
                     }
+                    mysqli_stmt_close($upd);
                 }
+                mysqli_stmt_close($chk);
             }
         }
 
@@ -140,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $alerts[] = ['type' => 'error', 'msg' => 'Failed to change password. Please try again.'];
                     }
+                    mysqli_stmt_close($psql);
                 }
                 mysqli_stmt_close($stmt_pass);
             }
@@ -662,6 +650,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <?php
 // Cleanup
-if (isset($stmt)) { mysqli_stmt_close($stmt); }
 mysqli_close($conn);
 ?>

@@ -5,25 +5,33 @@ include 'session_check.php'; // Handles DB connection and session validation
 // Set JSON header for AJAX responses
 header('Content-Type: application/json');
 
-// Session timeout check (consistent with manage_complaints.php)
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    echo json_encode(['success' => false, 'msg' => 'Please log in to access this page.']);
-    exit();
+// ---------------------------
+// CSRF token
+// ---------------------------
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    echo json_encode(['success' => false, 'msg' => 'Session expired.']);
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
 
 // CSRF check
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
     echo json_encode(['success' => false, 'msg' => 'Invalid request. Please try again.']);
     exit();
 }
+
+// Fetch staff_id using email from session
+$staff_email = $_SESSION['staff_email'];
+$staff_query = "SELECT staff_id FROM staff WHERE email = ?";
+$stmt = mysqli_prepare($conn, $staff_query);
+mysqli_stmt_bind_param($stmt, "s", $staff_email);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$staff = mysqli_fetch_assoc($result);
+if (!$staff) {
+    echo json_encode(['success' => false, 'msg' => 'Account not found.']);
+    exit();
+}
+$staff_id = $staff['staff_id'];
+mysqli_stmt_close($stmt);
 
 // Sanitize and validate inputs
 $complaint_id = (int)($_POST['complaint_id'] ?? 0);
@@ -101,7 +109,7 @@ if ($success) {
     if (!empty($comment_text)) {
         $comment_sql = "INSERT INTO complaint_comments (complaint_id, commenter_type, commenter_id, comment) VALUES (?, 'staff', ?, ?)";
         $comment_stmt = mysqli_prepare($conn, $comment_sql);
-        mysqli_stmt_bind_param($comment_stmt, "iis", $complaint_id, $_SESSION['staff_id'], $comment_text);
+        mysqli_stmt_bind_param($comment_stmt, "iis", $complaint_id, $staff_id, $comment_text);
         $comment_success = mysqli_stmt_execute($comment_stmt);
         mysqli_stmt_close($comment_stmt);
         
