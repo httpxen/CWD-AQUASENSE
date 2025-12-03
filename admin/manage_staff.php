@@ -1,23 +1,12 @@
 <?php
-include 'session_check.php';
+include 'session_check.php'; // Handles DB, session validation, timeout, and updates STAFF_LAST_ACTIVITY
 
-// ---------------------------
-// Session timeout (30 minutes)
-// ---------------------------
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    header("Location: login.php?message=Please log in to access the dashboard.");
+// Get staff_id from session (assuming set during login)
+$staff_id = $_SESSION['staff_id'] ?? null;
+if (!$staff_id) {
+    header("Location: ../admin_login.php?message=Please log in as admin.");
     exit();
 }
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: login.php?message=Session expired, please log in again.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-
-$staff_id = $_SESSION['staff_id'];
 
 // Update last activity in database (repurposing last_login as last_activity for online status tracking)
 $update_activity_query = "UPDATE staff SET last_login = NOW() WHERE staff_id = ?";
@@ -60,7 +49,7 @@ $current_staff = mysqli_fetch_assoc($result);
 if (!$current_staff) {
     session_unset();
     session_destroy();
-    header("Location: login.php?message=Account not found.");
+    header("Location: ../admin_login.php?message=Account not found.");
     exit();
 }
 mysqli_stmt_close($stmt);
@@ -207,13 +196,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             mysqli_stmt_close($old_stmt);
 
-            $upload_dir = '../uploads/staff/';
+            $upload_dir = '../assets/uploads/staff/';
             if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
             $file_extension = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
             $file_name = uniqid() . '.' . $file_extension;
             $upload_path = $upload_dir . $file_name;
             if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                $new_profile_picture = 'uploads/staff/' . $file_name;
+                $new_profile_picture = 'assets/uploads/staff/' . $file_name;
                 $update_fields .= ", profile_picture = ?";
                 $params[] = $new_profile_picture;
                 $types .= "s";
