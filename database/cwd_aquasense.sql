@@ -20,6 +20,7 @@ CREATE TABLE `users` (
   `password` VARCHAR(255) NOT NULL,
   `reset_token` VARCHAR(255) DEFAULT NULL,
   `reset_token_expiry` DATETIME DEFAULT NULL,
+  `reset_expiry` DATETIME DEFAULT NULL,  -- Idinagdag mo ito dito
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `profile_picture` VARCHAR(255) DEFAULT NULL,
   `remember_token` VARCHAR(100) DEFAULT NULL,
@@ -53,24 +54,43 @@ CREATE TABLE `staff` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Table structure for table `announcements`
+CREATE TABLE announcements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    start_date DATE NOT NULL,
+    start_time TIME NULL,
+    end_date DATE NOT NULL,
+    end_time TIME NULL,
+    affected_areas TEXT,
+    image_path VARCHAR(255),
+    staff_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (staff_id) REFERENCES staff(staff_id)
+);
+-- --------------------------------------------------------
+
+-- --------------------------------------------------------
 -- Table structure for table `complaints`
 -- (created before any complaint-related FK tables)
 -- --------------------------------------------------------
 CREATE TABLE `complaints` (
-  `complaint_id` INT(11) NOT NULL AUTO_INCREMENT,
-  `user_id` INT(11) NOT NULL,
-  `category` VARCHAR(100) NOT NULL,
-  `description` TEXT NOT NULL,
-  `sentiment` VARCHAR(20) DEFAULT NULL,
-  `status` ENUM('Pending','In Progress','Resolved','Closed') DEFAULT 'Pending',
-  `action_due` DATE DEFAULT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `attachment_path` VARCHAR(255) DEFAULT NULL,
-  `resolved_at` DATETIME DEFAULT NULL,
-  PRIMARY KEY (`complaint_id`),
-  KEY `user_id` (`user_id`),
-  CONSTRAINT `complaints_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  `complaint_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `category` varchar(100) NOT NULL,
+  `description` text NOT NULL,
+  `sentiment` varchar(20) DEFAULT NULL,
+  `status` enum('Pending','In Progress','Resolved','Closed') DEFAULT 'Pending',
+  `action_due` date DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `attachment_path` varchar(255) DEFAULT NULL,
+  `location_lat` double(10,8) DEFAULT NULL,
+  `location_lng` double(11,8) DEFAULT NULL,
+  `location_address` varchar(255) DEFAULT NULL,
+  `resolved_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`complaint_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------

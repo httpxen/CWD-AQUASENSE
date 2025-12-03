@@ -1,6 +1,6 @@
 <?php
 // update_status.php
-include 'session_check.php'; // Handles DB connection and session validation
+include 'session_check.php'; // Support-only session check (adjust if needed)
 
 // Set JSON header for AJAX responses
 header('Content-Type: application/json');
@@ -63,6 +63,18 @@ if ($new_status === 'In Progress') {
     }
 }
 
+// Employee Permission Check - Only allow updates if assigned to this staff
+$assign_check_sql = "SELECT id FROM complaint_assignments WHERE complaint_id = ? AND staff_id = ? ORDER BY id DESC LIMIT 1";
+$assign_check_stmt = mysqli_prepare($conn, $assign_check_sql);
+mysqli_stmt_bind_param($assign_check_stmt, "ii", $complaint_id, $_SESSION['staff_id']);
+mysqli_stmt_execute($assign_check_stmt);
+if (mysqli_stmt_get_result($assign_check_stmt)->num_rows === 0) {
+    mysqli_stmt_close($assign_check_stmt);
+    echo json_encode(['success' => false, 'msg' => 'You are not assigned to this complaint.']);
+    exit();
+}
+mysqli_stmt_close($assign_check_stmt);
+
 // Validate complaint exists
 $check_sql = "SELECT complaint_id FROM complaints WHERE complaint_id = ?";
 $check_stmt = mysqli_prepare($conn, $check_sql);
@@ -97,7 +109,7 @@ $success = mysqli_stmt_execute($stmt);
 mysqli_stmt_close($stmt);
 
 if ($success) {
-    // Save comment if provided (use 'comment' column as per schema)
+    // Save comment if provided
     if (!empty($comment_text)) {
         $comment_sql = "INSERT INTO complaint_comments (complaint_id, commenter_type, commenter_id, comment) VALUES (?, 'staff', ?, ?)";
         $comment_stmt = mysqli_prepare($conn, $comment_sql);

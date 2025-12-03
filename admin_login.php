@@ -196,6 +196,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     .group:focus-within .password-toggle {
       color: #3b82f6;
     }
+
+    .toast-container {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-width: 420px;
+    }
+    .toast {
+      animation: slideInRight 0.4s ease-out forwards;
+      min-width: 300px;
+      max-width: 100%;
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .toast-error {
+      background: linear-gradient(#fef2f2, #fee2e2);
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+    }
+    .toast-success {
+      background: linear-gradient(#f0fdf4, #dcfce7);
+      border: 1px solid #86efac;
+      color: #166534;
+    }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -224,34 +254,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       <!-- Form Card -->
       <div class="card py-7 px-6 shadow-xl rounded-2xl fade-in-up">
         
-        <!-- Alert Messages -->
-        <?php if (!empty($error)) : ?>
-          <div class="mb-4 p-3.5 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200/50 rounded-xl backdrop-blur-sm">
-            <div class="flex items-start">
-              <div class="flex-shrink-0 pt-0.5">
-                <i class="fas fa-exclamation-circle text-red-400 text-base"></i>
-              </div>
-              <div class="ml-3 flex-1">
-                <p class="text-sm text-red-800 leading-5 font-medium"><?= htmlspecialchars($error); ?></p>
-              </div>
-            </div>
-          </div>
-        <?php endif; ?>
-
-        <?php if (!empty($_GET['message'])) : ?>
-          <div class="mb-4 p-3.5 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200/50 rounded-xl backdrop-blur-sm">
-            <div class="flex items-start">
-              <div class="flex-shrink-0 pt-0.5">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-yellow-400">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
-                </svg>
-              </div>
-              <div class="ml-3 flex-1">
-                <p class="text-sm text-yellow-800 leading-5 font-medium"><?= htmlspecialchars($_GET['message']); ?></p>
-              </div>
-            </div>
-          </div>
-        <?php endif; ?>
 
         <form class="space-y-5" action="" method="POST">
           
@@ -364,7 +366,54 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
   </div>
 
+  <!-- TOAST CONTAINER -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- LOGIN ERROR -->
+  <?php if (!empty($error)): ?>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        showToast(<?= json_encode($error) ?>, 'error');
+      });
+    </script>
+  <?php endif; ?>
+
+  <!-- SESSION EXPIRED / OTHER SUCCESS MESSAGE -->
+  <?php if (!empty($_GET['message'])): ?>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const message = <?= json_encode(htmlspecialchars($_GET['message'])) ?>;
+        showToast(message, 'success');
+        
+        // Clean URL
+        const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]message=[^&]*/g, '').replace(/^&/, '?');
+        history.replaceState({}, document.title, cleanUrl || window.location.pathname);
+      });
+    </script>
+  <?php endif; ?>
+
   <script>
+    function showToast(message, type = 'error') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast p-4 rounded-lg shadow-lg flex items-start gap-3 text-sm font-medium border ${type === 'error' ? 'toast-error' : 'toast-success'}`;
+
+      toast.innerHTML = `
+        <div class="flex-shrink-0 mt-0.5">
+          ${type === 'error' 
+            ? '<svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>'
+            : '<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+          }
+        </div>
+        <div class="flex-1">${message}</div>
+        <button type="button" onclick="this.parentElement.remove()" class="ml-3 text-gray-500 hover:text-gray-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      `;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 7000);
+    }
+
     // Password Toggle Functionality
     function togglePassword() {
       const passwordInput = document.getElementById('password');

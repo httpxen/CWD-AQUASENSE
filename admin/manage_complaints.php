@@ -394,6 +394,12 @@ mysqli_stmt_close($stmt);
                         </svg>
                         View Feedback
                     </a>
+                    <a href="announcements.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
+                        </svg>
+                        Announcement Section
+                    </a>
                 </nav>
                 <div class="p-4 border-t border-gray-100">
                     <div class="flex items-center space-x-3 mb-4">
@@ -465,7 +471,7 @@ mysqli_stmt_close($stmt);
                             </svg>
                             <input type="text" id="globalSearch" placeholder="Search complaints..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200" value="<?php echo e($q); ?>">
                         </div>
-                    
+                
                         <!-- Filters -->
                         <div class="flex flex-wrap gap-2 items-center">
                             <!-- Status Filter -->
@@ -482,7 +488,7 @@ mysqli_stmt_close($stmt);
                                     </svg>
                                 </div>
                             </div>
-                        
+                    
                             <!-- Category Filter -->
                             <div class="relative">
                                 <select id="categoryFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
@@ -497,7 +503,7 @@ mysqli_stmt_close($stmt);
                                     </svg>
                                 </div>
                             </div>
-                        
+                    
                             <!-- Clear Filters -->
                             <button id="clearFilters" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200">Clear</button>
                             <!-- Export PDF -->
@@ -658,29 +664,16 @@ mysqli_stmt_close($stmt);
                                 ];
                                 $previous_status = $assign_status;
                             }
+                            // Simplified logic for final status change (covers jumps and direct changes without re-assignment)
                             $last_assignment_status = end($assignments)['assignment_status'] ?? 'Pending';
-                            $expected_sequence = ['Pending', 'In Progress', 'Resolved', 'Closed'];
-                            $current_index = array_search($last_assignment_status, $expected_sequence);
-                            if ($current_index !== false && $current_status !== $last_assignment_status) {
-                                for ($i = $current_index + 1; $i < count($expected_sequence); $i++) {
-                                    if ($expected_sequence[$i] === 'Closed' && $current_status === 'Closed') {
-                                        $status_history[] = [
-                                            'timestamp' => $row['updated_at'],
-                                            'status' => 'Closed',
-                                            'event' => 'Status Changed',
-                                            'details' => 'Status changed from Resolved to Closed'
-                                        ];
-                                        break;
-                                    } elseif ($expected_sequence[$i] === $current_status) {
-                                        $status_history[] = [
-                                            'timestamp' => $row['updated_at'],
-                                            'status' => $current_status,
-                                            'event' => 'Status Changed',
-                                            'details' => 'Status changed from ' . $expected_sequence[$i - 1] . ' to ' . $current_status
-                                        ];
-                                        break;
-                                    }
-                                }
+                            if ($current_status !== $last_assignment_status) {
+                                $change_timestamp = !empty($row['resolved_at']) && in_array($current_status, ['Resolved', 'Closed']) ? $row['resolved_at'] : $row['updated_at'];
+                                $status_history[] = [
+                                    'timestamp' => $change_timestamp,
+                                    'status' => $current_status,
+                                    'event' => 'Status Changed',
+                                    'details' => 'Status changed from ' . $last_assignment_status . ' to ' . $current_status
+                                ];
                             }
                             // Add comments to history
                             $complaint_comments = $comments[$row['complaint_id']] ?? [];
@@ -716,7 +709,7 @@ mysqli_stmt_close($stmt);
                                 </span>';
                             }
                             ?>
-                            <div class="complaint-card" data-status="<?php echo e($current_status); ?>" data-category="<?php echo e($row['category']); ?>" data-description="<?php echo e(strtolower($row['description'])); ?>" data-user="<?php echo e(strtolower($row['user_name'] ?? '')); ?>">
+                            <div class="complaint-card" data-status="<?php echo e($current_status); ?>" data-category="<?php echo e($row['category']); ?>" data-description="<?php echo e(strtolower($row['description'])); ?>" data-user="<?php echo e(strtolower($row['user_name'] ?? '')); ?>" data-complaint-id="<?php echo (int)$row['complaint_id']; ?>" data-action-due="<?php echo e($row['action_due'] ?? ''); ?>" data-resolved-at="<?php echo !empty($row['resolved_at']) ? e(date('Y-m-d', strtotime($row['resolved_at']))) : ''; ?>">
                                 <!-- Complaint Header (Collapsible Toggle) -->
                                 <button type="button" class="w-full p-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 focus:outline-none" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180');">
                                     <div class="flex items-center space-x-3">
@@ -806,8 +799,9 @@ mysqli_stmt_close($stmt);
                                                         $icon_class = 'text-yellow-600';
                                                         $icon_path = 'M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 0 1-2.25 2.25M16.5 7.5V18a2.25 2.25 0 0 0 2.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 0 0 2.25 2.25h13.5M6 7.5h3v3H6v-3Z';
                                                     } elseif ($event['event'] === 'Status Changed') {
-                                                        $dot_class = $event_status === 'In Progress' ? 'bg-blue-100' : ($event_status === 'Resolved' ? 'bg-green-100' : 'bg-gray-100');
-                                                        $icon_class = $event_status === 'In Progress' ? 'text-blue-600' : ($event_status === 'Resolved' ? 'text-green-600' : 'text-gray-600');
+                                                        $dot_class = $event_status === 'In Progress' ? 'bg-blue-100' : ($event_status === 'Resolved' ? 'bg-green-100' : ($event_status === 'Closed' ? 'bg-gray-100' : 'bg-yellow-100'));
+                                                        $icon_class = $event_status === 'In Progress' ? 'text-blue-600' : ($event_status === 'Resolved' ? 'text-green-600' : ($event_status === 'Closed' ? 'text-gray-600' : 'text-yellow-600'));
+                                                        $icon_path = 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z';
                                                     } elseif ($event['event'] === 'Assigned to Staff') {
                                                         $dot_class = 'bg-purple-100';
                                                         $icon_class = 'text-purple-600';
@@ -981,7 +975,7 @@ mysqli_stmt_close($stmt);
                 <input type="hidden" name="complaint_id" id="statusComplaintId">
                 <input type="hidden" name="csrf_token" value="<?php echo e($csrf_token); ?>">
                 <div class="space-y-4">
-                    <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-2" onchange="toggleResolvedDate(this)" required>
+                    <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-2" onchange="toggleDateFields(this)" required>
                         <?php foreach ($ALLOWED_STATUSES as $s): ?>
                             <option value="<?php echo e($s); ?>"><?php echo e($s); ?></option>
                         <?php endforeach; ?>
@@ -989,6 +983,10 @@ mysqli_stmt_close($stmt);
                     <div id="resolvedDateField" style="display:none;">
                         <label class="block text-sm font-medium text-gray-700">Resolved Date</label>
                         <input type="date" name="resolved_at" class="w-full border border-gray-200 rounded-lg px-3 py-2">
+                    </div>
+                    <div id="dueDateField" style="display:none;">
+                        <label class="block text-sm font-medium text-gray-700">Due Date</label>
+                        <input type="date" name="action_due" class="w-full border border-gray-200 rounded-lg px-3 py-2">
                     </div>
                     <!-- New: Comment Textarea -->
                     <div>
@@ -1106,10 +1104,27 @@ mysqli_stmt_close($stmt);
         function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
         function openStatusModal(id) {
             document.getElementById('statusComplaintId').value = id;
-            // Pre-select current status
-            const currentStatus = document.querySelector(`#status-badge-${id}`).textContent.trim();
-            document.querySelector('#statusForm select[name="status"]').value = currentStatus;
-            toggleResolvedDate(document.querySelector('#statusForm select[name="status"]'));
+            const card = document.querySelector(`[data-complaint-id="${id}"]`);
+            if (!card) {
+                console.error('Card not found for id:', id);
+                return;
+            }
+            const currentStatus = card.dataset.status;
+            const select = document.querySelector('#statusForm select[name="status"]');
+            select.value = currentStatus;
+            const resolvedInput = document.querySelector('#statusForm input[name="resolved_at"]');
+            const dueInput = document.querySelector('#statusForm input[name="action_due"]');
+            if (['Resolved', 'Closed'].includes(currentStatus)) {
+                resolvedInput.value = card.dataset.resolvedAt || '';
+            } else {
+                resolvedInput.value = '';
+            }
+            if (currentStatus === 'In Progress') {
+                dueInput.value = card.dataset.actionDue || '';
+            } else {
+                dueInput.value = '';
+            }
+            toggleDateFields(select);
             // Clear comment textarea
             document.querySelector('#statusForm textarea[name="comment_text"]').value = '';
             document.getElementById('statusModal').classList.add('show');
@@ -1122,12 +1137,23 @@ mysqli_stmt_close($stmt);
             document.getElementById('editCommentModal').classList.add('show');
         }
         function closeEditCommentModal() { document.getElementById('editCommentModal').classList.remove('show'); }
-        function toggleResolvedDate(select) {
-            const field = document.getElementById('resolvedDateField');
-            field.style.display = (select.value === 'Resolved' || select.value === 'Closed') ? 'block' : 'none';
-            if (field.style.display === 'block') {
-                if (!field.querySelector('input').value) {
-                    field.querySelector('input').value = new Date().toISOString().split('T')[0];
+        function toggleDateFields(select) {
+            const resolvedField = document.getElementById('resolvedDateField');
+            const dueField = document.getElementById('dueDateField');
+            resolvedField.style.display = 'none';
+            dueField.style.display = 'none';
+            const value = select.value;
+            if (['Resolved', 'Closed'].includes(value)) {
+                resolvedField.style.display = 'block';
+                const resolvedInput = document.querySelector('input[name="resolved_at"]');
+                if (!resolvedInput.value) {
+                    resolvedInput.value = new Date().toISOString().split('T')[0];
+                }
+            } else if (value === 'In Progress') {
+                dueField.style.display = 'block';
+                const dueInput = document.querySelector('input[name="action_due"]');
+                if (!dueInput.value) {
+                    dueInput.value = new Date().toISOString().split('T')[0];
                 }
             }
         }

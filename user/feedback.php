@@ -28,6 +28,15 @@ if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) >
 }
 $_SESSION['LAST_ACTIVITY'] = time();
 
+// Check for alert message on GET (after redirect)
+$alert_type = null;
+$alert_message = null;
+if (isset($_SESSION['alert_type']) && isset($_SESSION['alert_message'])) {
+    $alert_type = $_SESSION['alert_type'];
+    $alert_message = $_SESSION['alert_message'];
+    unset($_SESSION['alert_type'], $_SESSION['alert_message']);
+}
+
 // Utility: safe output
 function e($str) { return htmlspecialchars((string)$str, ENT_QUOTES, 'UTF-8'); }
 
@@ -84,14 +93,14 @@ mysqli_stmt_close($stmt);
 $stmt = null;
 
 // Handle feedback submission (POST only)
-$feedback_message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_text'])) {
     $feedback_text = trim($_POST['feedback_text']);
     if (!empty($feedback_text)) {
         // First, check for foul words
         $foulCheck = detectFoulWords($feedback_text);
         if ($foulCheck === 'Foul') {
-            $_SESSION['feedback_message'] = '<div class="bg-red-50 text-red-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>Please avoid using foul or offensive language in your feedback. Try again with cleaner words.</div>';
+            $_SESSION['alert_type'] = 'error';
+            $_SESSION['alert_message'] = 'Please avoid using foul or offensive language in your feedback. Try again with cleaner words.';
         } else {
             // If clean, analyze sentiment and insert
             $sentiment = analyzeSentiment($feedback_text);
@@ -99,24 +108,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['feedback_text'])) {
             $stmt = mysqli_prepare($conn, $insert_query);
             mysqli_stmt_bind_param($stmt, "iss", $user_id, $feedback_text, $sentiment);
             if (mysqli_stmt_execute($stmt)) {
-                $_SESSION['feedback_message'] = '<div class="bg-green-50 text-green-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>Feedback submitted successfully!</div>';
+                $_SESSION['alert_type'] = 'success';
+                $_SESSION['alert_message'] = 'Feedback submitted successfully!';
             } else {
-                $_SESSION['feedback_message'] = '<div class="bg-red-50 text-red-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>Error submitting feedback. Please try again.</div>';
+                $_SESSION['alert_type'] = 'error';
+                $_SESSION['alert_message'] = 'Error submitting feedback. Please try again.';
             }
             if (isset($stmt)) mysqli_stmt_close($stmt);
         }
     } else {
-        $_SESSION['feedback_message'] = '<div class="bg-yellow-50 text-yellow-700 p-4 rounded-lg flex items-center"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>Feedback cannot be empty.</div>';
+        $_SESSION['alert_type'] = 'warning';
+        $_SESSION['alert_message'] = 'Feedback cannot be empty.';
     }
     // Always redirect after POST to avoid resubmission
     header("Location: feedback.php");
     exit();
-}
-
-// Check for session message on GET
-if (isset($_SESSION['feedback_message'])) {
-    $feedback_message = $_SESSION['feedback_message'];
-    unset($_SESSION['feedback_message']);
 }
 
 // Fetch user's feedback history
@@ -140,29 +146,7 @@ $stmt = null;
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <link rel="stylesheet" href="css/feedback.css" />
-    <style>
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .sidebar { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); width: 256px; }
-        .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .avatar-glow { position: relative; cursor: pointer; }
-        .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
-        .avatar-glow:hover::before { opacity: 1; }
-        .group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.2s ease; }
-        @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
-        .profile-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .profile-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08); }
-        .header-2025 { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.2); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); margin-left: 256px; width: calc(100% - 256px); }
-        main { margin-left: 256px; padding: 1.5rem; }
-        @media (max-width: 767px) {
-            .header-2025 { margin-left: 0; width: 100%; }
-            main { margin-left: 0; }
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.translate-x-0 { transform: translateX(0); }
-        }
-    </style>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
@@ -262,9 +246,6 @@ $stmt = null;
                             </svg>
                             <h2 class="text-2xl font-semibold text-gray-900">Submit Your Feedback</h2>
                         </div>
-                        <?php if ($feedback_message): ?>
-                            <div class="mb-6"><?php echo $feedback_message; ?></div>
-                        <?php endif; ?>
                         <form method="POST" action="feedback.php">
                             <div class="mb-6">
                                 <label for="feedback_text" class="block text-sm font-medium text-gray-700 mb-2">Your Feedback</label>
@@ -318,6 +299,16 @@ $stmt = null;
     <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
 
     <script>
+        // SweetAlert2 for feedback alerts
+        <?php if ($alert_type): ?>
+        Swal.fire({
+            icon: '<?php echo $alert_type; ?>',
+            title: '<?php echo ucfirst($alert_type); ?>',
+            text: '<?php echo addslashes($alert_message); ?>',
+            confirmButtonText: 'OK'
+        });
+        <?php endif; ?>
+
         // Mobile menu toggle
         document.getElementById('mobileMenuToggle').addEventListener('click', function() {
             const sidebar = document.querySelector('.sidebar');

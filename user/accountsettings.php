@@ -207,6 +207,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <link rel="stylesheet" href="css/accountsettings.css">
+    <style>
+        .upload-zone {
+            border: 2px dashed #d1d5db;
+            border-radius: 0.5rem;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.2s ease;
+            background-color: #f9fafb;
+            cursor: pointer;
+        }
+
+        .upload-zone.drag-over {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+            transform: scale(1.02);
+        }
+
+        .upload-zone:hover {
+            border-color: #9ca3af;
+        }
+
+        @keyframes gentle-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+        }
+
+        .animate-gentle-pulse {
+            animation: gentle-pulse 2s ease-in-out infinite;
+        }
+    </style>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
@@ -255,8 +285,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- User Info & Logout -->
                 <div class="p-4 border-t border-gray-100">
                     <div class="flex items-center space-x-3 mb-4">
-                        <div class="avatar-glow" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
+                        <div class="avatar-glow relative" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
                             <img src="<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                            <!-- Online Status Ring -->
+                            <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                         </div>
                         <div>
                             <p class="font-semibold text-gray-900"><?php echo htmlspecialchars($user['first_name'] . ' ' . $user['last_name']); ?></p>
@@ -287,7 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <!-- Profile Dropdown -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <!-- Avatar with Glow Effect -->
-                                <div class="avatar-glow" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
+                                <div class="avatar-glow relative" onclick="openModal('<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>')">
                                     <img src="<?php echo htmlspecialchars($user['profile_picture'] ?: 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($user['first_name'] . ' ' . $user['last_name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
                                     <!-- Online Status Ring -->
                                     <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
@@ -555,6 +587,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 reader.readAsDataURL(file);
             } else {
                 previewContainer.classList.add('hidden');
+            }
+        });
+
+        // Drag-and-drop functionality for upload zone
+        const uploadZone = document.querySelector('.upload-zone');
+        const fileInput = document.getElementById('profile_picture_input');
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault(); // Prevent default to allow drop
+            uploadZone.classList.add('drag-over');
+        });
+
+        uploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                // Validate image type (matches your PHP accept)
+                if (file.type.startsWith('image/') && (file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp')) {
+                    // File size check
+                    if (file.size > 3 * 1024 * 1024) { // 3MB
+                        Swal.fire({
+                            title: 'File Too Large',
+                            text: 'Max 3MB allowed.',
+                            icon: 'error',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                        return;
+                    }
+                    // Create DataTransfer to set files on input
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    fileInput.files = dt.files;
+                    
+                    // Trigger change event for preview
+                    const changeEvent = new Event('change', { bubbles: true });
+                    fileInput.dispatchEvent(changeEvent);
+                    
+                    // Optional: Show a quick success message
+                    Swal.fire({
+                        title: 'File Ready!',
+                        text: 'Your image is set for upload.',
+                        icon: 'info',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire({
+                        title: 'Invalid File',
+                        text: 'Please drop a JPG, PNG, or WEBP image.',
+                        icon: 'error',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                }
+            }
+        });
+
+        // Also make the entire upload-zone clickable to trigger browse (enhances UX)
+        uploadZone.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'LABEL') {
+                fileInput.click();
             }
         });
 
