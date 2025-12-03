@@ -59,7 +59,7 @@ if (!$staff) {
     session_unset();
     session_destroy();
     header("Location: ../../admin_login.php?message=Employee account not found.");
-    exitg();
+    exit();
 }
 
 // ---------------------------
@@ -237,9 +237,14 @@ mysqli_stmt_close($stmt);
         .modal-content{margin:auto;display:block;max-width:90%;max-height:90%;border-radius:8px;}
         .modal-close{position:absolute;top:15px;right:35px;color:#f1f1f1;font-size:40px;font-weight:bold;cursor:pointer;}
         .modal-close:hover{color:#bbb;}
-        .upload-zone{border:2px dashed #d1d5db;border-radius:.5rem;padding:1.5rem;text-align:center;background:#f9fafb;transition:border-color .2s ease;}
+        .upload-zone{border:2px dashed #d1d5db;border-radius:.5rem;padding:1.5rem;text-align:center;background:#f9fafb;transition:border-color .2s ease;cursor:pointer;}
         .upload-zone:hover{border-color:#3b82f6;}
         .upload-zone svg{width:2rem;height:2rem;color:#6b7280;margin-bottom:.5rem;}
+        .upload-zone.drag-over {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+            transform: scale(1.02);
+        }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -334,24 +339,6 @@ mysqli_stmt_close($stmt);
         </header>
 
         <main class="p-6 space-y-6">
-
-            <!-- Alerts -->
-            <?php if (!empty($alerts)): ?>
-                <?php foreach ($alerts as $a): ?>
-                    <div class="status <?php
-                        echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' :
-                             ($a['type'] === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200');
-                    ?>">
-                        <div class="flex items-start">
-                            <i class="mr-2 mt-0.5 <?php
-                                echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' :
-                                     ($a['type'] === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-info');
-                            ?>"></i>
-                            <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
 
             <!-- Grid -->
             <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -462,7 +449,22 @@ mysqli_stmt_close($stmt);
     <img class="modal-content" id="modalImage">
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+    // Show SweetAlerts for PHP alerts
+    <?php if (!empty($alerts)): ?>
+        <?php foreach ($alerts as $a): ?>
+            Swal.fire({
+                title: '<?php echo ucfirst($a['type']); ?>!',
+                text: '<?php echo addslashes($a['msg']); ?>',
+                icon: '<?php echo $a['type']; ?>',
+                confirmButtonColor: '#3b82f6',
+                timer: <?php echo $a['type'] === 'success' ? '3000' : 'null'; ?>,
+                timerProgressBar: <?php echo $a['type'] === 'success' ? 'true' : 'false'; ?>
+            });
+        <?php endforeach; ?>
+    <?php endif; ?>
+
     // ---------- Mobile sidebar ----------
     document.getElementById('mobileMenuToggle').addEventListener('click', () => {
         const sb = document.querySelector('.sidebar');
@@ -526,7 +528,14 @@ mysqli_stmt_close($stmt);
         e.stopPropagation();
         this.style.transform = 'scale(0.95)';
         setTimeout(() => this.style.transform = 'scale(1)', 150);
-        alert('Notifications coming soon!');
+        Swal.fire({
+            title: 'Coming Soon!',
+            text: 'Notifications feature will be available shortly.',
+            icon: 'info',
+            confirmButtonColor: '#3b82f6',
+            timer: 3000,
+            timerProgressBar: true
+        });
     });
 
     // ---------- Avatar preview ----------
@@ -543,6 +552,76 @@ mysqli_stmt_close($stmt);
             reader.readAsDataURL(file);
         } else {
             container.classList.add('hidden');
+        }
+    });
+
+    // ---------- Drag-and-drop functionality for upload zone ----------
+    const uploadZone = document.querySelector('.upload-zone');
+    const fileInput = document.getElementById('profile_picture_input');
+
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); // Prevent default to allow drop
+        uploadZone.classList.add('drag-over');
+    });
+
+    uploadZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('drag-over');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('drag-over');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            const file = files[0];
+            // Validate image type (matches your PHP accept)
+            if (file.type.startsWith('image/') && (file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/gif')) {
+                // File size check
+                if (file.size > 3 * 1024 * 1024) { // 3MB
+                    Swal.fire({
+                        title: 'File Too Large',
+                        text: 'Max 3MB allowed.',
+                        icon: 'error',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                    return;
+                }
+                // Create DataTransfer to set files on input
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                fileInput.files = dt.files;
+                
+                // Trigger change event for preview
+                const changeEvent = new Event('change', { bubbles: true });
+                fileInput.dispatchEvent(changeEvent);
+                
+                // Optional: Show a quick success message
+                Swal.fire({
+                    title: 'File Ready!',
+                    text: 'Your image is set for upload.',
+                    icon: 'info',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire({
+                    title: 'Invalid File',
+                    text: 'Please drop a JPG, PNG, WEBP, or GIF image.',
+                    icon: 'error',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+        }
+    });
+
+    // Also make the entire upload-zone clickable to trigger browse (enhances UX)
+    uploadZone.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'LABEL') {
+            fileInput.click();
         }
     });
 

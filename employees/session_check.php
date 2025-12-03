@@ -21,12 +21,17 @@ if (!isset($_SESSION['staff_email']) || !isset($_SESSION['staff_role']) || !isse
 // Update last activity
 $_SESSION['STAFF_LAST_ACTIVITY'] = time();
 
+// Update last activity in database (for online status tracking)
+$staff_id = $_SESSION['staff_id'];
+$update_activity_query = "UPDATE staff SET last_login = NOW() WHERE staff_id = ?";
+$update_stmt = mysqli_prepare($conn, $update_activity_query);
+mysqli_stmt_bind_param($update_stmt, "i", $staff_id);
+mysqli_stmt_execute($update_stmt);
+mysqli_stmt_close($update_stmt);
+
 // Role check: Must be Employee
 if ($_SESSION['staff_role'] !== 'Employee') {
     header("Location: ../admin_login.php?message=Access denied. Employee role required.");
     exit();
 }
-
-// Set staff ID for use in queries
-$staff_id = $_SESSION['staff_id'];
 ?>

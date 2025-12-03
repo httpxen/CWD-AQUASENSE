@@ -22,6 +22,47 @@ function e($str) { return htmlspecialchars((string)$str, ENT_QUOTES, 'UTF-8'); }
 
 $user_id = $_SESSION['user_id'];
 
+// ADD COLUMN IF NOT EXISTS for complaint_comments
+$check_col_sql = "SHOW COLUMNS FROM complaint_comments LIKE 'is_read'";
+$check_col_result = mysqli_query($conn, $check_col_sql);
+if (mysqli_num_rows($check_col_result) == 0) {
+    $add_col_sql = "ALTER TABLE complaint_comments ADD COLUMN `is_read` TINYINT(1) DEFAULT 0 AFTER `created_at`";
+    mysqli_query($conn, $add_col_sql);
+}
+
+// ADD COLUMN IF NOT EXISTS for complaint_assignments
+$check_assign_col_sql = "SHOW COLUMNS FROM complaint_assignments LIKE 'is_read'";
+$check_assign_col_result = mysqli_query($conn, $check_assign_col_sql);
+if (mysqli_num_rows($check_assign_col_result) == 0) {
+    $add_assign_col_sql = "ALTER TABLE complaint_assignments ADD COLUMN `is_read` TINYINT(1) DEFAULT 0 AFTER `status`";
+    mysqli_query($conn, $add_assign_col_sql);
+}
+
+// MARK AS READ HANDLER
+if (isset($_POST['mark_read'])) {
+    header('Content-Type: application/json');
+    $id = (int)($_POST['id'] ?? 0);
+    $type = $_POST['type'] ?? 'comment';
+    if ($id > 0) {
+        $table = $type === 'assignment' ? 'complaint_assignments' : 'complaint_comments';
+        $id_col = $type === 'assignment' ? 'id' : 'comment_id';
+        $extra = $type === 'comment' ? "AND commenter_type = 'staff'" : '';
+        $update_sql = "UPDATE {$table} SET is_read = 1 WHERE {$id_col} = ? {$extra}";
+        $update_stmt = mysqli_prepare($conn, $update_sql);
+        mysqli_stmt_bind_param($update_stmt, "i", $id);
+        $success = mysqli_stmt_execute($update_stmt);
+        mysqli_stmt_close($update_stmt);
+        if ($success) {
+            echo json_encode(['success' => true]);
+        } else {
+            echo json_encode(['success' => false, 'msg' => 'Failed to mark as read.']);
+        }
+    } else {
+        echo json_encode(['success' => false, 'msg' => 'Invalid ID.']);
+    }
+    exit;
+}
+
 // Fetch user data
 $user_query = "SELECT first_name, last_name, username, email, profile_picture FROM users WHERE id = ?";
 $stmt = mysqli_prepare($conn, $user_query);
@@ -58,7 +99,112 @@ $avg_res = mysqli_stmt_get_result($avg_stmt);
 $avg_resolution_hours = mysqli_fetch_assoc($avg_res)['avg_hrs'];
 $avg_resolution_hours = is_null($avg_resolution_hours) ? 0 : round((float)$avg_resolution_hours, 1);
 mysqli_stmt_close($avg_stmt); // Close once
+
+// Fetch notifications: Recent UNREAD staff comments and assignments
+$notif_sql = "
+    SELECT 
+        'comment' as type,
+        cc.comment_id as id, 
+        cc.complaint_id, 
+        cc.comment as message, 
+        cc.created_at as timestamp,
+        c.category, 
+        c.description, 
+        c.status,
+        s.name AS staff_name
+    FROM complaint_comments cc
+    JOIN complaints c ON cc.complaint_id = c.complaint_id
+    LEFT JOIN staff s ON cc.commenter_id = s.staff_id
+    WHERE c.user_id = ? AND cc.commenter_type = 'staff' AND cc.is_read = 0
+    
+    UNION ALL
+    
+    SELECT 
+        'assignment' as type,
+        ca.id as id,
+        ca.complaint_id, 
+        CONCAT('Your complaint has been assigned to ', s.name) as message, 
+        ca.assigned_at as timestamp,
+        c.category, 
+        c.description, 
+        c.status,
+        s.name AS staff_name
+    FROM complaint_assignments ca
+    JOIN complaints c ON ca.complaint_id = c.complaint_id
+    JOIN staff s ON ca.staff_id = s.staff_id
+    WHERE c.user_id = ? AND ca.is_read = 0
+    
+    ORDER BY timestamp DESC 
+    LIMIT 10
+";
+$notif_stmt = mysqli_prepare($conn, $notif_sql);
+mysqli_stmt_bind_param($notif_stmt, "ii", $user_id, $user_id);
+mysqli_stmt_execute($notif_stmt);
+$notif_res = mysqli_stmt_get_result($notif_stmt);
+$notifications = [];
+while ($row = mysqli_fetch_assoc($notif_res)) {
+    if ($row['type'] === 'comment') {
+        $row['message'] = "From {$row['staff_name']}: " . $row['message'];
+    }
+    $notifications[] = $row;
+}
+mysqli_stmt_close($notif_stmt);
+$notif_count = count($notifications);
+
+// Fetch announcements (similar to admin side, but filter for Active/Upcoming only, and no staff_name needed for customer view)
+$announcements_query = "SELECT * FROM announcements ORDER BY start_date DESC";
+$announcements_result = mysqli_query($conn, $announcements_query);
+if (!$announcements_result) die("Query failed: " . mysqli_error($conn));
+$ongoing = [];
+$upcoming = [];
+$now = new DateTime();
+while ($row = mysqli_fetch_assoc($announcements_result)) {
+    $start_str = $row['start_date'] . ($row['start_time'] ? ' ' . $row['start_time'] : ' 00:00:00');
+    $end_str = $row['end_date'] . ($row['end_time'] ? ' ' . $row['end_time'] : ' 23:59:59');
+    $start = new DateTime($start_str);
+    $end = new DateTime($end_str);
+    
+    // Skip expired
+    if ($end < $now) {
+        continue;
+    }
+    
+    // Set formatted fields
+    $row['formatted_start'] = date('M j, Y g:i A', strtotime($start_str));
+    $row['formatted_end'] = date('M j, Y g:i A', strtotime($end_str));
+    
+    // NEW: Flag for timed events (for allDay logic in JS)
+    $row['has_time'] = !empty($row['start_time']) || !empty($row['end_time']);
+    
+    // Tweak formatted_range for clarity (hide hours if full-day)
+    if (!$row['has_time']) {
+        $row['formatted_range'] = date('M j', strtotime($row['start_date'])) . ($row['start_date'] !== $row['end_date'] ? ' – ' . date('M j, Y', strtotime($row['end_date'])) : '');
+    } else {
+        $row['formatted_range'] = date('M j, Y g:i A', strtotime($start_str)) . ' – ' . date('M j, Y g:i A', strtotime($end_str));
+    }
+    
+    // Now set status and push
+    if ($now >= $start && $now <= $end) {
+        $row['status'] = 'Ongoing';
+        $ongoing[] = $row;
+    } else {
+        $row['status'] = 'Upcoming';
+        $upcoming[] = $row;
+    }
+}
+
+// Ensure sorting within groups (though query already DESC, for safety)
+usort($ongoing, function($a, $b) {
+    return strtotime($b['start_date']) - strtotime($a['start_date']);
+});
+usort($upcoming, function($a, $b) {
+    return strtotime($b['start_date']) - strtotime($a['start_date']);
+});
+
+// Merge: Ongoing first, then Upcoming
+$announcements = array_merge($ongoing, $upcoming);
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -69,35 +215,114 @@ mysqli_stmt_close($avg_stmt); // Close once
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="css/dashboard.css" />
     
     <!-- SWEETALERT2 CDN -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+    <!-- FullCalendar CDN for Calendar (optional, for announcements calendar) -->
+    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css' rel='stylesheet' />
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
+
     <style>
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        .sidebar { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); width: 256px; }
-        .card { background: linear-gradient(145deg, #ffffff, #f8fafc); border: 1px solid rgba(0,0,0,0.05); border-radius: 1rem; }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
-        .status { border-radius: 0.5rem; padding: 0.75rem 1rem; }
-        .avatar-glow { position: relative; cursor: pointer; }
-        .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
-        .avatar-glow:hover::before { opacity: 1; }
-        .notification-badge { position: absolute; top: -2px; right: -2px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); }
-        .group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.2s ease; }
-        @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
-        .profile-card { transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
-        .profile-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08); }
-        .header-2025 { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); background: rgba(255,255,255,0.85); border-bottom: 1px solid rgba(255,255,255,0.2); box-shadow: 0 1px 3px 0 rgba(0,0,0,0.05); margin-left: 256px; width: calc(100% - 256px); }
-        html { scroll-behavior: smooth; }
-        main { margin-left: 256px; padding: 1.5rem; }
-        @media (max-width: 767px) {
-            .header-2025 { margin-left: 0; width: 100%; }
-            main { margin-left: 0; }
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.translate-x-0 { transform: translateX(0); }
+        #calendar {
+            font-family: 'Inter', sans-serif;
         }
+        .fc-theme-standard .fc-toolbar-chunk .fc-button-group .fc-button {
+            background-color: #f3f4f6;
+            border-color: #d1d5db;
+            color: #374151;
+            transition: all 0.2s;
+        }
+        .fc-theme-standard .fc-toolbar-chunk .fc-button-group .fc-button:hover {
+            background-color: #e5e7eb;
+            border-color: #9ca3af;
+        }
+        .fc-theme-standard .fc-toolbar-chunk .fc-button-group .fc-button.fc-button-active {
+            background-color: #3b82f6;
+            border-color: #2563eb;
+            color: white;
+        }
+        .fc-daygrid-day-number {
+            color: #374151;
+            font-weight: 500;
+        }
+        .fc-daygrid-day.fc-day-today {
+            background-color: #eff6ff !important;
+            border-color: #3b82f6 !important;
+        }
+        .fc-event {
+            border: none !important;
+            border-radius: 6px !important;
+            font-size: 0.7rem !important;  /* Smaller text */
+            font-weight: 600 !important;
+            padding: 2px 4px !important;
+            margin-bottom: 2px !important;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            max-height: 1.5em;  /* Prevent overflow */
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        .fc-event:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15) !important;
+        }
+        .fc-timegrid-col-header-cell .fc-timegrid-col-header-cell-cushion {
+            font-weight: 600;
+            color: #1f2937;
+            background-color: #f9fafb;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .fc-timegrid-event {
+            border-radius: 6px !important;
+            font-size: 0.75rem !important;
+            padding: 2px 4px !important;
+        }
+        .fc-timegrid-slot {
+            height: 1.5rem;
+        }
+        .fc-timegrid-col {
+            border-left: 1px solid #e5e7eb;
+        }
+        .fc .fc-daygrid-day-bg,
+        .fc .fc-timegrid-slot-lane {
+            background-color: #f9fafb;
+        }
+        .fc .fc-today-button {
+            background-color: #3b82f6 !important;
+            border-color: #2563eb !important;
+            color: white !important;
+        }
+
+        /* Cleaner calendar cells */
+        .fc-daygrid-day { height: 80px; }  /* Even rows */
+        .fc-daygrid-event-dot { display: none; }  /* Hide dots, use colors instead */
+        .fc .fc-daygrid-day-number { font-size: 0.875rem; font-weight: 600; }
+
+        /* Mobile: Compact more */
+        @media (max-width: 768px) {
+            .fc-daygrid-day { height: 60px; }
+            .fc-event { font-size: 0.65rem !important; }
+            #calendar { font-size: 0.85em; }
+        }
+
+        /* Notification Dropdown Styles */
+        #notificationDropdown {
+            right: 0;
+        }
+        .notification-item {
+            transition: background-color 0.2s;
+        }
+        .notification-item:hover {
+            background-color: #f9fafb;
+        }
+        .status-badge-inprogress { @apply bg-blue-50 text-blue-700 border border-blue-200; }
+        .status-badge-resolved { @apply bg-green-50 text-green-700 border border-green-200; }
+        .status-badge-closed { @apply bg-gray-100 text-gray-700 border border-gray-200; }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -167,12 +392,58 @@ mysqli_stmt_close($avg_stmt); // Close once
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-4"></div>
                         <div class="flex items-center space-x-4">
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
+                            <div class="relative" id="notificationContainer">
+                                <button class="p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
+                                    </svg>
+                                    <div id="notificationBadge" class="notification-badge" style="display: <?php echo $notif_count > 0 ? 'block' : 'none'; ?>;">
+                                        <?php echo $notif_count; ?>
+                                    </div>
+                                </button>
+                                <!-- Notification Dropdown -->
+                                <div id="notificationDropdown" class="hidden absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30 max-h-96 overflow-y-auto">
+                                    <div id="notificationList">
+                                        <?php if (empty($notifications)): ?>
+                                            <div class="p-4 text-center text-gray-500">
+                                                <i class="fas fa-bell-slash text-2xl mb-2 block"></i>
+                                                <p class="text-sm">No updates from Admin yet.</p>
+                                            </div>
+                                        <?php else: ?>
+                                            <?php foreach ($notifications as $notif): ?>
+                                                <?php
+                                                $status_badge_class = '';
+                                                if ($notif['status'] === 'In Progress') $status_badge_class = 'status-badge-inprogress';
+                                                elseif ($notif['status'] === 'Resolved') $status_badge_class = 'status-badge-resolved';
+                                                elseif ($notif['status'] === 'Closed') $status_badge_class = 'status-badge-closed';
+                                                $message_snippet = substr($notif['message'], 0, 80) . (strlen($notif['message']) > 80 ? '...' : '');
+                                                ?>
+                                                <a href="complaints.php?complaint_id=<?php echo (int)$notif['complaint_id']; ?>" 
+                                                   class="notification-item block p-4 border-b border-gray-100 last:border-b-0"
+                                                   data-id="<?php echo (int)$notif['id']; ?>"
+                                                   data-type="<?php echo e($notif['type']); ?>">
+                                                    <div class="flex justify-between items-start">
+                                                        <div class="flex-1 min-w-0">
+                                                            <h4 class="text-sm font-semibold text-gray-900 truncate mb-1">Complaint #<?php echo (int)$notif['complaint_id']; ?> - <?php echo e($notif['category']); ?></h4>
+                                                            <p class="text-xs text-gray-600 mb-2 line-clamp-2 italic"><?php echo e($message_snippet); ?></p>
+                                                            <span class="inline-block px-2 py-1 text-xs font-medium rounded-full <?php echo $status_badge_class; ?>"><?php echo e($notif['status']); ?></span>
+                                                        </div>
+                                                        <div class="ml-2 flex-shrink-0">
+                                                            <small class="text-xs text-gray-500 block text-right"><?php echo date('M j, Y', strtotime($notif['timestamp'])); ?></small>
+                                                            <small class="text-xs text-gray-400 block text-right"><?php echo date('g:i A', strtotime($notif['timestamp'])); ?></small>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            <?php endforeach; ?>
+                                            <?php if (count($notifications) >= 10): ?>
+                                                <div class="p-4 text-center border-t border-gray-100">
+                                                    <a href="complaints.php" class="text-sm text-blue-600 hover:underline">View All Updates</a>
+                                                </div>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
@@ -191,6 +462,7 @@ mysqli_stmt_close($avg_stmt); // Close once
             </header>
 
             <main class="p-6 space-y-6">
+                <!-- KPIs Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
                     <div class="card p-6">
                         <div class="flex items-center justify-between">
@@ -248,7 +520,91 @@ mysqli_stmt_close($avg_stmt); // Close once
                         </div>
                     </div>
                 </div>
+
+                <!-- Announcements & Calendar Tabbed Section -->
+                <div class="card">
+                    <div class="border-b border-gray-200">
+                        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                            <button id="announcements-tab" class="tab-button flex-1 py-4 px-1 border-b-2 font-medium text-sm rounded-t-lg focus:outline-none transition-colors <?php echo !empty($announcements) ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'; ?>">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2 text-blue-600">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
+                                </svg>
+                                Announcements
+                            </button>
+                            <button id="calendar-tab" class="tab-button flex-1 py-4 px-1 border-b-2 font-medium text-sm rounded-t-lg focus:outline-none transition-colors <?php echo empty($announcements) ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'; ?>">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2 text-purple-600">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+                                </svg>
+                                Calendar
+                            </button>
+                        </nav>
+                    </div>
+                    <!-- Announcements Tab Content -->
+                    <div id="announcements-content" class="tab-content <?php echo empty($announcements) ? 'hidden' : ''; ?>">
+                        <?php if (!empty($announcements)): ?>
+                            <div class="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                                <?php foreach ($announcements as $ann): ?>
+                                    <div class="p-6 hover:bg-gray-50 transition-colors">
+                                        <div class="flex items-start space-x-4">
+                                            <?php if ($ann['image_path']): ?>
+                                                <img src="../<?php echo e($ann['image_path']); ?>" alt="Announcement Image" onclick="viewImage(this.src)" class="w-16 h-16 rounded-lg object-cover flex-shrink-0 border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity">
+                                            <?php else: ?>
+                                                <div class="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                                    <i class="fas fa-bullhorn text-gray-400 text-xl"></i>
+                                                </div>
+                                            <?php endif; ?>
+                                            <div class="flex-1 min-w-0">
+                                                <h3 class="text-sm font-semibold text-gray-900 mb-1"><?php echo e($ann['title']); ?></h3>
+                                                <p class="text-sm text-gray-600 mb-2 line-clamp-2"><?php echo e($ann['description']); ?></p>
+                                                <?php if ($ann['affected_areas']): ?>
+                                                    <p class="text-xs text-blue-600 mb-2">Affected: <?php echo e($ann['affected_areas']); ?></p>
+                                                <?php endif; ?>
+                                                <div class="flex items-center justify-between text-xs text-gray-500">
+                                                    <span title="<?php echo e($ann['formatted_range']); ?>"><?php echo e($ann['formatted_range']); ?></span>
+                                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
+                                                        echo $ann['status'] === 'Ongoing' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'; 
+                                                    ?>">
+                                                        <?php echo e($ann['status']); ?>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="p-6 text-center">
+                                <i class="fas fa-bullhorn text-gray-400 text-4xl mb-4"></i>
+                                <h3 class="text-lg font-semibold text-gray-900 mb-2">No Announcements</h3>
+                                <p class="text-gray-500">Check back later for updates.</p>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                    <!-- Calendar Tab Content -->
+                    <div id="calendar-content" class="tab-content <?php echo !empty($announcements) ? 'hidden' : ''; ?>">
+                        <div class="p-6">
+                            <?php if (empty($announcements)): ?>
+                                <div class="text-center py-8">
+                                    <i class="fas fa-calendar-times text-gray-400 text-4xl mb-4"></i>
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-2">No Scheduled Events</h3>
+                                    <p class="text-gray-500">Your service area is running smoothly. Check back for updates.</p>
+                                </div>
+                            <?php endif; ?>
+                            <div id='calendar'></div>
+                        </div>
+                    </div>
+                </div>
             </main>
+        </div>
+    </div>
+
+    <!-- Image View Modal -->
+    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="relative bg-white rounded-xl shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <button onclick="closeModal('imageModal')" class="absolute top-4 right-4 z-10 text-white hover:text-gray-200 text-2xl font-bold">
+                <i class="fas fa-times"></i>
+            </button>
+            <img id="imageModalImg" src="" alt="Full Image" class="w-full h-[90vh] object-contain mx-auto">
         </div>
     </div>
 
@@ -282,6 +638,147 @@ mysqli_stmt_close($avg_stmt); // Close once
     </script>
 
     <script>
+        let calendarInstance = null; // Global reference to calendar instance
+
+        // Notification Dropdown Functionality
+        const notificationBtn = document.getElementById('notificationBtn');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        const notificationContainer = document.getElementById('notificationContainer');
+        const notificationBadge = document.getElementById('notificationBadge');
+        const notificationList = document.getElementById('notificationList');
+
+        notificationBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => this.style.transform = 'scale(1)', 150);
+            if (notificationDropdown.classList.contains('hidden')) {
+                notificationDropdown.classList.remove('hidden');
+                // Position dropdown
+                const rect = notificationBtn.getBoundingClientRect();
+                notificationDropdown.style.right = '0';
+                notificationDropdown.style.top = `${rect.bottom + 8}px`;
+            } else {
+                notificationDropdown.classList.add('hidden');
+            }
+        });
+
+        // Mark notification as read on click
+        notificationList.addEventListener('click', function(e) {
+            const notificationItem = e.target.closest('.notification-item');
+            if (notificationItem) {
+                e.preventDefault();
+                const id = parseInt(notificationItem.dataset.id);
+                const type = notificationItem.dataset.type;
+                const href = notificationItem.getAttribute('href');
+                if (id && type && href) {
+                    // AJAX to mark as read
+                    fetch(window.location.href, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `mark_read=1&id=${id}&type=${type}`
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Remove item from list
+                            notificationItem.remove();
+                            // Update count
+                            let currentCount = parseInt(notificationBadge.textContent) - 1;
+                            notificationBadge.textContent = currentCount;
+                            if (currentCount <= 0) {
+                                notificationBadge.style.display = 'none';
+                                // Show no notifications if list empty
+                                if (notificationList.children.length === 0) {
+                                    notificationList.innerHTML = `
+                                        <div class="p-4 text-center text-gray-500">
+                                            <i class="fas fa-bell-slash text-2xl mb-2 block"></i>
+                                            <p class="text-sm">No updates from Admin yet.</p>
+                                        </div>
+                                    `;
+                                }
+                            }
+                            // Navigate after marking
+                            window.location.href = href;
+                        } else {
+                            // If fail, still navigate
+                            window.location.href = href;
+                            if (data.msg) {
+                                Swal.fire({
+                                    icon: 'warning',
+                                    title: 'Notice',
+                                    text: data.msg,
+                                    timer: 2000,
+                                    showConfirmButton: false
+                                });
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error marking as read:', error);
+                        // Still navigate on error
+                        window.location.href = href;
+                    });
+                } else {
+                    window.location.href = href;
+                }
+            }
+        });
+
+        // Hide dropdown on outside click
+        document.addEventListener('click', function(e) {
+            if (!notificationContainer.contains(e.target)) {
+                notificationDropdown.classList.add('hidden');
+            }
+        });
+
+        // Tab switching functionality
+        document.getElementById('announcements-tab').addEventListener('click', function() {
+            document.getElementById('announcements-content').classList.remove('hidden');
+            document.getElementById('calendar-content').classList.add('hidden');
+            this.classList.add('border-blue-500', 'text-blue-600');
+            this.classList.remove('border-transparent', 'text-gray-500', 'border-purple-500', 'text-purple-600');
+            document.getElementById('calendar-tab').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('calendar-tab').classList.remove('border-purple-500', 'text-purple-600', 'border-blue-500', 'text-blue-600');
+        });
+
+        document.getElementById('calendar-tab').addEventListener('click', function() {
+            document.getElementById('calendar-content').classList.remove('hidden');
+            document.getElementById('announcements-content').classList.add('hidden');
+            this.classList.add('border-purple-500', 'text-purple-600');
+            this.classList.remove('border-transparent', 'text-gray-500', 'border-blue-500', 'text-blue-600');
+            document.getElementById('announcements-tab').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('announcements-tab').classList.remove('border-blue-500', 'text-blue-600', 'border-purple-500', 'text-purple-600');
+            
+            // Trigger calendar resize if instance exists
+            if (calendarInstance) {
+                setTimeout(() => {
+                    calendarInstance.updateSize();
+                }, 100); // Small delay to ensure the tab is visible
+            }
+        });
+
+        // Image view function
+        function viewImage(src) {
+            document.getElementById('imageModalImg').src = src;
+            document.getElementById('imageModal').classList.remove('hidden');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        // Close modals on outside click
+        window.onclick = function(event) {
+            const modals = document.querySelectorAll('.fixed.inset-0');
+            modals.forEach(modal => {
+                if (event.target === modal) {
+                    closeModal(modal.id);
+                }
+            });
+        }
+
         document.getElementById('mobileMenuToggle').addEventListener('click', function() {
             const sidebar = document.querySelector('.sidebar');
             sidebar.classList.toggle('-translate-x-full');
@@ -342,16 +839,93 @@ mysqli_stmt_close($avg_stmt); // Close once
 
         document.addEventListener('click', hideProfileDropdown);
 
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => this.style.transform = 'scale(1)', 150);
-            alert('Notifications feature coming soon!');
+        // FullCalendar for Announcements
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+            calendarInstance = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',  // Stick to month—hide week views
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: ''  // Remove view switcher to prevent clutter (no timeGridWeek)
+                },
+                displayEventTime: false,  // Hide times in month view for simplicity
+                dayMaxEvents: 2,  // Show max 2 per day, + "more" link
+                moreLinkText: 'more',  // Cleaner "more" button
+                eventDisplay: 'block',
+                height: 'auto',  // Auto-height for mobile, no fixed 600px
+                dayMaxEventRows: 3,  // Limit rows per day to avoid overflow
+                
+                // Day styling (enhance readability)
+                dayCellClassNames: function(arg) {
+                    let classes = ['border-gray-200 hover:bg-gray-50 transition-colors p-1 rounded'];
+                    if (arg.isToday) {
+                        classes.push('bg-blue-50 border-2 border-blue-200');
+                    }
+                    if (arg.isWeekend) {
+                        classes.push('bg-gray-50 opacity-80');  // Softer weekends
+                    }
+                    return classes;
+                },
+                dayHeaderClassNames: 'font-semibold text-gray-700 bg-gray-50 py-2 border-b border-gray-200',
+                dayCellDidMount: function(info) {
+                    info.el.style.height = '80px';  // Fixed height per cell for even grid, easier scan
+                },
+                
+                // Events from PHP (update sa PHP part below for allDay logic)
+                events: <?php echo json_encode(array_map(function($ann) {
+                    $hasTime = !empty($ann['start_time']) || !empty($ann['end_time']);  // NEW: Detect if timed
+                    $start_iso = $ann['start_date'] . ($hasTime ? 'T' . $ann['start_time'] : '');
+                    $end_iso = $ann['end_date'] . ($hasTime ? 'T' . $ann['end_time'] : '');
+                    $color = $ann['status'] === 'Ongoing' || stripos($ann['title'], 'Emergency') !== false ? '#10b981' : '#f59e0b';  // Green for emergency/ongoing, orange else
+                    return [
+                        'title' => $ann['title'],  // Keep short
+                        'start' => $start_iso,
+                        'end' => $end_iso,
+                        'allDay' => !$hasTime,  // NEW: Auto all-day if no time—goes to top row
+                        'description' => $ann['description'],
+                        'affected_areas' => $ann['affected_areas'],
+                        'status' => $ann['status'],
+                        'image_path' => $ann['image_path'] ? '../' . $ann['image_path'] : null,
+                        'backgroundColor' => $color,
+                        'borderColor' => '#ffffff',
+                        'textColor' => '#ffffff',
+                        'classNames' => ['text-xs font-medium rounded shadow-sm px-1 py-0.5', $hasTime ? 'border-l-4 border-white' : '']  // Extra border for timed events
+                    ];
+                }, $announcements)); ?>,
+                
+                eventClick: function(info) {
+                    // Enhanced popup—more concise
+                    const areas = info.event.extendedProps.affected_areas ? `<p class="text-xs text-blue-600 mt-1">Affected: ${info.event.extendedProps.affected_areas}</p>` : '';
+                    const img = info.event.extendedProps.image_path ? `<img src="${info.event.extendedProps.image_path}" alt="Img" class="mt-2 w-full max-w-xs rounded border">` : '';
+                    Swal.fire({
+                        title: `<span class="text-lg">${info.event.title}</span>`,
+                        html: `
+                            <div class="text-sm text-gray-700 mb-2">${info.event.extendedProps.description}</div>
+                            ${areas}
+                            <p class="text-xs text-gray-500 mt-2">Status: <span class="font-semibold text-${info.event.extendedProps.status === 'Ongoing' ? 'green' : 'yellow'}-600">${info.event.extendedProps.status}</span></p>
+                            ${img}
+                        `,
+                        icon: 'info',
+                        confirmButtonText: 'Got it',
+                        confirmButtonColor: '#3b82f6',
+                        width: '400px'  // Smaller popup for quick read
+                    });
+                }
+            });
+            calendarInstance.render();
+
+            // If calendar tab is initially visible (no announcements), trigger updateSize just in case
+            if (!document.getElementById('calendar-content').classList.contains('hidden')) {
+                setTimeout(() => {
+                    calendarInstance.updateSize();
+                }, 100);
+            }
         });
     </script>
 </body>
 </html>
 
 <?php
-
+mysqli_close($conn);
 ?>
