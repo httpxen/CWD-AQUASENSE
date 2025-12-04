@@ -15,7 +15,7 @@ function getAndClearFlash() {
     return $alerts;
 }
 
-// AJAX handler for edit data (use ?get_edit=id) - unchanged
+// AJAX handler for edit data (use ?get_edit=id)
 if (isset($_GET['get_edit'])) {
     $edit_id = (int)$_GET['get_edit'];
     $edit_query = "SELECT * FROM announcements WHERE id = ?";
@@ -433,73 +433,71 @@ if (isset($_GET['edit'])) {
 
                 <!-- Announcements Table -->
                 <div class="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
+                    <table class="min-w-full divide-y divide-gray-200 w-full table-auto">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
+                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php if (empty($announcements)): ?>
                                 <tr>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Title</th>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-48">Description</th>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-40">Date & Time</th>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Status</th>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Created By</th>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Image</th>
-                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Actions</th>
+                                    <td colspan="7" class="px-6 py-8 text-center text-gray-500">No announcements found.</td>
                                 </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <?php if (empty($announcements)): ?>
-                                    <tr>
-                                        <td colspan="7" class="px-6 py-8 text-center text-gray-500">No announcements found.</td>
-                                    </tr>
-                                <?php else: ?>
-                                    <?php foreach ($announcements as $ann): ?>
-                                        <tr class="hover:bg-gray-50 transition-colors">
-                                            <td class="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                <?php echo htmlspecialchars($ann['title']); ?>
-                                            </td>
-                                            <td class="px-3 py-4 text-sm text-gray-600 max-w-40 truncate" title="<?php echo htmlspecialchars($ann['description']); ?>">
-                                                <?php echo htmlspecialchars(substr($ann['description'], 0, 60)) . (strlen($ann['description']) > 60 ? '...' : ''); ?>
-                                            </td>
-                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500" title="<?php echo htmlspecialchars($ann['formatted_range']); ?>">
-                                                <?php echo htmlspecialchars($ann['formatted_range']); ?>
-                                            </td>
-                                            <td class="px-3 py-4 whitespace-nowrap">
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
-                                                    echo $ann['status'] === 'Active' ? 'bg-green-100 text-green-800' : 
-                                                         ($ann['status'] === 'Upcoming' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'); 
-                                                ?>">
-                                                    <?php echo htmlspecialchars($ann['status']); ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500 truncate max-w-24">
-                                                <?php echo htmlspecialchars($ann['staff_name']); ?>
-                                            </td>
-                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?php if ($ann['image_path']): ?>
-                                                    <img src="../<?php echo htmlspecialchars($ann['image_path']); ?>" alt="Announcement Image" onclick="viewImage(this.src)" class="w-8 h-8 rounded object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity">
-                                                <?php else: ?>
-                                                    <span class="text-gray-400 text-xs">No image</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="px-3 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                                <button onclick="openModal('editModal', <?php echo $ann['id']; ?>)" class="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors" title="Edit">
-                                                    <i class="fas fa-edit text-sm"></i>
+                            <?php else: ?>
+                                <?php foreach ($announcements as $ann): ?>
+                                    <tr class="hover:bg-gray-50 transition-colors">
+                                        <td class="px-3 py-4 text-sm font-medium text-gray-900 sm:whitespace-nowrap">
+                                            <?php echo htmlspecialchars($ann['title']); ?>
+                                        </td>
+                                        <td class="px-3 py-4 text-sm text-gray-600" title="<?php echo htmlspecialchars($ann['description']); ?>">
+                                            <?php echo htmlspecialchars(substr($ann['description'], 0, 100)) . (strlen($ann['description']) > 100 ? '...' : ''); ?>
+                                        </td>
+                                        <td class="px-3 py-4 text-sm text-gray-500 sm:whitespace-nowrap" title="<?php echo htmlspecialchars($ann['formatted_range']); ?>">
+                                            <?php echo htmlspecialchars($ann['formatted_range']); ?>
+                                        </td>
+                                        <td class="px-3 py-4 whitespace-nowrap">
+                                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
+                                                echo $ann['status'] === 'Active' ? 'bg-green-100 text-green-800' : 
+                                                     ($ann['status'] === 'Upcoming' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'); 
+                                            ?>">
+                                                <?php echo htmlspecialchars($ann['status']); ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-3 py-4 text-sm text-gray-500 sm:whitespace-nowrap sm:truncate max-w-xs">
+                                            <?php echo htmlspecialchars($ann['staff_name']); ?>
+                                        </td>
+                                        <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <?php if ($ann['image_path']): ?>
+                                                <img src="../<?php echo htmlspecialchars($ann['image_path']); ?>" alt="Announcement Image" onclick="viewImage(this.src)" class="w-8 h-8 rounded object-cover border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity">
+                                            <?php else: ?>
+                                                <span class="text-gray-400 text-xs">No image</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="px-3 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                            <button onclick="openModal('editModal', <?php echo $ann['id']; ?>)" class="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors" title="Edit">
+                                                <i class="fas fa-edit text-sm"></i>
+                                            </button>
+                                            <form method="POST" class="delete-form inline-block" style="display: inline;">
+                                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="id" value="<?php echo $ann['id']; ?>">
+                                                <button type="submit" class="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors" title="Delete">
+                                                    <i class="fas fa-trash text-sm"></i>
                                                 </button>
-                                                <form method="POST" class="delete-form inline-block" style="display: inline;">
-                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
-                                                    <input type="hidden" name="action" value="delete">
-                                                    <input type="hidden" name="id" value="<?php echo $ann['id']; ?>">
-                                                    <button type="submit" class="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors" title="Delete">
-                                                        <i class="fas fa-trash text-sm"></i>
-                                                    </button>
-                                                </form>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </main>
         </div>
@@ -610,11 +608,11 @@ if (isset($_GET['edit'])) {
 
     <!-- Image View Modal -->
     <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div class="relative bg-white rounded-xl shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <button onclick="closeModal('imageModal')" class="absolute top-4 right-4 z-10 text-white hover:text-gray-200 text-2xl font-bold">
+        <div class="relative max-w-2xl w-full max-h-[80vh] mx-auto overflow-hidden">
+            <button onclick="closeModal('imageModal')" class="absolute top-4 right-4 z-10 text-white hover:text-gray-200 text-2xl font-bold bg-black bg-opacity-50 rounded-full w-10 h-10 flex items-center justify-center">
                 <i class="fas fa-times"></i>
             </button>
-            <img id="imageModalImg" src="" alt="Full Image" class="w-full h-[90vh] object-contain mx-auto">
+            <img id="imageModalImg" src="" alt="Full Image" class="w-full h-full object-contain">
         </div>
     </div>
 
