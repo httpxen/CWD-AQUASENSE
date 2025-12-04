@@ -27,7 +27,7 @@
         </div>
         <div class="form-group form-grid-col-span-2"> <!-- Location now full-width to allow bigger map -->
             <label class="form-label">Location <span class="text-red-500">*</span></label>
-            <div id="map" style="height: 350px; width: 100%; border-radius: 0.5rem; border: 1px solid #d1d5db; margin-bottom: 0.25rem;"></div>
+            <div id="map" style="height: 350px; width: 100%; border-radius: 0.5rem; border: 1px solid #d1d5db; margin-bottom: 1rem;"></div>
             <input type="hidden" name="location_lat" id="lat" required>
             <input type="hidden" name="location_lng" id="lng" required>
             <input type="text" name="location_address" id="address" class="form-input text-sm" placeholder="Click map to select location..." readonly required style="font-size: 0.875rem; padding: 0.375rem 0.5rem; margin-bottom: 0.25rem;">
@@ -76,7 +76,7 @@
 .full-form-grid {
     display: grid;
     grid-template-columns: 1fr; /* Single column now for full-width elements, better for larger map */
-    gap: 1rem; /* Uniform gap, reduced for tighter layout */
+    gap: 1.5rem; /* Uniform gap, increased for better flow and to prevent overlap */
     align-items: start; /* Align items to top to reduce vertical waste */
 }
 
@@ -85,7 +85,7 @@
 }
 
 .form-group {
-    margin-bottom: 0.75rem; /* Reduced from default 1rem to tighten vertical space */
+    margin-bottom: 1rem; /* Increased from default 0.75rem to loosen vertical space */
 }
 
 .form-label {
@@ -100,14 +100,25 @@
     min-height: 120px; /* Slightly taller textarea to fill vertical space better */
 }
 
+/* Fix for map overlap on scroll */
+#map {
+    position: relative;
+    z-index: 0 !important;  /* Lowers z-index to prevent covering other content */
+}
+
+/* Optional: If you have a sidebar, adjust its z-index higher */
+.sidebar {  /* Replace with your actual sidebar class if needed */
+    z-index: 10;
+}
+
 @media (max-width: 768px) {
     .full-form-grid {
         grid-template-columns: 1fr; /* Already single column on mobile */
-        gap: 1rem;
+        gap: 1.5rem;
     }
     
     #map {
-        height: 300px !important; /* Slightly smaller on mobile for usability */
+        height: 250px !important; /* Smaller on mobile for usability */
     }
 }
 </style>
@@ -115,7 +126,9 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize Leaflet Map (increased height to 350px for better space utilization)
-    const map = L.map('map').setView([14.2127, 121.1154], 13); // Calamba center
+    const map = L.map('map', {
+        scrollWheelZoom: false  // Disable wheel zoom to prevent scroll interference
+    }).setView([14.2127, 121.1154], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
@@ -132,6 +145,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let marker;
     map.on('click', function(e) {
+        if (!map.scrollWheelZoom.enabled()) {
+            map.scrollWheelZoom.enable();  // Enable zoom after first click for better UX
+        }
+        
         if (marker) {
             map.removeLayer(marker);
         }
@@ -163,6 +180,9 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('address').value = 'Unable to fetch address. Try another spot.';
         }
     }
+
+    // Refresh map size in case it's in a tab or hidden initially
+    setTimeout(() => { map.invalidateSize(); }, 100);
 
     const form = document.getElementById('complaintForm');
     form.addEventListener('submit', async function(e) {

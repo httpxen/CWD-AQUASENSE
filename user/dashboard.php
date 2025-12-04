@@ -583,11 +583,11 @@ $announcements = array_merge($ongoing, $upcoming);
 
     <!-- Image View Modal -->
     <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div class="relative bg-white rounded-xl shadow-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <button onclick="closeModal('imageModal')" class="absolute top-4 right-4 z-10 text-white hover:text-gray-200 text-2xl font-bold">
+        <div class="relative max-w-2xl w-full max-h-[80vh] mx-auto overflow-hidden">
+            <button onclick="closeModal('imageModal')" class="absolute top-4 right-4 z-10 text-white hover:text-gray-200 text-2xl font-bold bg-black bg-opacity-50 rounded-full w-10 h-10 flex items-center justify-center">
                 <i class="fas fa-times"></i>
             </button>
-            <img id="imageModalImg" src="" alt="Full Image" class="w-full h-[90vh] object-contain mx-auto">
+            <img id="imageModalImg" src="" alt="Full Image" class="w-full h-full object-contain">
         </div>
     </div>
 
