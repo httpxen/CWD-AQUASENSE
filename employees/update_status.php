@@ -5,20 +5,6 @@ include 'session_check.php'; // Support-only session check (adjust if needed)
 // Set JSON header for AJAX responses
 header('Content-Type: application/json');
 
-// Session timeout check (consistent with manage_complaints.php)
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    echo json_encode(['success' => false, 'msg' => 'Please log in to access this page.']);
-    exit();
-}
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    echo json_encode(['success' => false, 'msg' => 'Session expired.']);
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-
 // CSRF check
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
     echo json_encode(['success' => false, 'msg' => 'Invalid request. Please try again.']);

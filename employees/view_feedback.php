@@ -1,21 +1,5 @@
 <?php
-include 'session_check.php'; // Employee-only session check
-
-// Session timeout (30 minutes)
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    header("Location: ../admin_login.php?message=Please log in to access the feedback page.");
-    exit();
-}
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: ../admin_login.php?message=Session expired, please log in again.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-
-$staff_id = $_SESSION['staff_id'];
+include 'session_check.php'; 
 
 // CSRF token
 if (empty($_SESSION['csrf_token'])) {
@@ -40,7 +24,7 @@ $alerts = [];
 // Fetch staff info
 $staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ? AND role = 'Employee'";
 $stmt = mysqli_prepare($conn, $staff_query);
-mysqli_stmt_bind_param($stmt, "i", $staff_id);
+mysqli_stmt_bind_param($stmt, "i", $_SESSION['staff_id']);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $staff = mysqli_fetch_assoc($result);

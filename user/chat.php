@@ -1,4 +1,5 @@
 <?php
+include 'session_check.php'; // Include the separated session check
 session_name('CustomerSession');
 session_start();
 require __DIR__ . '/../vendor/autoload.php';

@@ -2,24 +2,6 @@
 include 'session_check.php'; // Employee session check
 
 // ---------------------------
-// Session timeout (30 minutes)
-// ---------------------------
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    header("Location: ../../admin_login.php?message=Please log in to access the dashboard.");
-    exit();
-}
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: ../../admin_login.php?message=Session expired, please log in again.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-
-$staff_id = $_SESSION['staff_id'];
-
-// ---------------------------
 // CSRF token
 // ---------------------------
 if (empty($_SESSION['csrf_token'])) {
@@ -50,7 +32,7 @@ $staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at
                 FROM staff 
                 WHERE staff_id = ? AND role = 'Employee'";
 $stmt = mysqli_prepare($conn, $staff_query);
-mysqli_stmt_bind_param($stmt, "i", $staff_id);
+mysqli_stmt_bind_param($stmt, "i", $_SESSION['staff_id']);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $staff = mysqli_fetch_assoc($result);
@@ -84,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $check_sql = "SELECT staff_id FROM staff WHERE email = ? AND staff_id <> ? LIMIT 1";
                 $chk = mysqli_prepare($conn, $check_sql);
-                mysqli_stmt_bind_param($chk, "si", $email, $staff_id);
+                mysqli_stmt_bind_param($chk, "si", $email, $_SESSION['staff_id']);
                 mysqli_stmt_execute($chk);
                 $dupe = mysqli_stmt_get_result($chk);
                 if (mysqli_fetch_assoc($dupe)) {
@@ -92,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $upd_sql = "UPDATE staff SET name = ?, email = ? WHERE staff_id = ?";
                     $upd = mysqli_prepare($conn, $upd_sql);
-                    mysqli_stmt_bind_param($upd, "ssi", $name, $email, $staff_id);
+                    mysqli_stmt_bind_param($upd, "ssi", $name, $email, $_SESSION['staff_id']);
                     if (mysqli_stmt_execute($upd)) {
                         $staff['name']  = $name;
                         $staff['email'] = $email;
@@ -121,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $pass_q = "SELECT password FROM staff WHERE staff_id = ?";
                 $stmt_p = mysqli_prepare($conn, $pass_q);
-                mysqli_stmt_bind_param($stmt_p, "i", $staff_id);
+                mysqli_stmt_bind_param($stmt_p, "i", $_SESSION['staff_id']);
                 mysqli_stmt_execute($stmt_p);
                 $res = mysqli_stmt_get_result($stmt_p);
                 $stored = mysqli_fetch_assoc($res)['password'] ?? '';
@@ -132,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $hash = password_hash($new, PASSWORD_DEFAULT);
                     $up = mysqli_prepare($conn, "UPDATE staff SET password = ? WHERE staff_id = ?");
-                    mysqli_stmt_bind_param($up, "si", $hash, $staff_id);
+                    mysqli_stmt_bind_param($up, "si", $hash, $_SESSION['staff_id']);
                     if (mysqli_stmt_execute($up)) {
                         $alerts[] = ['type' => 'success', 'msg' => 'Password changed successfully.'];
                     } else {
@@ -166,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $alerts[] = ['type' => 'error', 'msg' => 'Image too large. Max 3MB.'];
                     } else {
                         $ext = $allowed[$mime];
-                        $safeName = 'avatar_s' . $staff_id . '_' . time() . '.' . $ext;
+                        $safeName = 'avatar_s' . $_SESSION['staff_id'] . '_' . time() . '.' . $ext;
                         $uploadDir = '../assets/uploads/staff/';
                         if (!is_dir($uploadDir)) {
                             mkdir($uploadDir, 0755, true);
@@ -181,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
 
                             $up = mysqli_prepare($conn, "UPDATE staff SET profile_picture = ? WHERE staff_id = ?");
-                            mysqli_stmt_bind_param($up, "si", $relativePath, $staff_id);
+                            mysqli_stmt_bind_param($up, "si", $relativePath, $_SESSION['staff_id']);
                             if (mysqli_stmt_execute($up)) {
                                 $staff['profile_picture'] = $relativePath;
                                 $alerts[] = ['type' => 'success', 'msg' => 'Profile picture updated.'];
