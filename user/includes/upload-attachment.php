@@ -1,5 +1,5 @@
 <?php
-// upload-attachment.php - FIXED & IMPROVED: ADDED CSRF, VALIDATION, BETTER UI, ERROR HANDLING
+include 'session_check.php';
 session_name('CustomerSession');
 session_start();
 require '../db/db.php';

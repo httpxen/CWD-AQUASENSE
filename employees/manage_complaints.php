@@ -1,24 +1,12 @@
 <?php
-include 'session_check.php'; // Support-only session check
-// Session timeout (30 minutes)
-$timeout_duration = 1800;
-if (!isset($_SESSION['staff_id'])) {
-    header("Location: ../support_login.php?message=Please log in to access complaints.");
-    exit();
-}
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: ../support_login.php?message=Session expired, please log in again.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
-$staff_id = $_SESSION['staff_id'];
+include 'session_check.php'; 
+
 // CSRF token
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
+
 // Helpers
 function e($str) { return htmlspecialchars((string)$str, ENT_QUOTES, 'UTF-8'); }
 function get_avatar_src($profile_picture, $name) {
@@ -27,9 +15,11 @@ function get_avatar_src($profile_picture, $name) {
     }
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
+
 // Constants
 $ALLOWED_CATEGORIES = ['Billing','Water Quality','Service Interruption','Meter / Leakage','New Connection / Disconnection','Customer Service','Others'];
 $ALLOWED_STATUSES = ['Pending', 'In Progress', 'Resolved', 'Closed'];
+
 // === EDIT COMMENT HANDLER ===
 if (isset($_POST['edit_comment'])) {
     header('Content-Type: application/json');

@@ -1,5 +1,5 @@
 <?php
-include 'session_check.php'; // From Step 2 (now fixed with session_name)
+include 'session_check.php'; 
 
 // ---------------------------
 // CSRF token

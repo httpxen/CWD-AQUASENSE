@@ -1,7 +1,5 @@
 <?php
-include '../db/db.php';
-session_name('CustomerSession');
-session_start();
+include 'session_check.php'; // Include the separated session check
 
 // Require Composer's autoloader
 require __DIR__ . '/../vendor/autoload.php';
@@ -23,20 +21,6 @@ $dotenv->load();
 // -------- DEBUG: Enable for testing (remove in production) --------
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
-
-// -------- Session guard --------
-$timeout_duration = 1800;
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php?message=Please log in to access complaints.");
-    exit();
-}
-if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) > $timeout_duration) {
-    session_unset();
-    session_destroy();
-    header("Location: ../login.php?message=Session expired, please log in again.");
-    exit();
-}
-$_SESSION['LAST_ACTIVITY'] = time();
 
 // -------- Fetch logged-in user --------
 $user_id = $_SESSION['user_id'];
