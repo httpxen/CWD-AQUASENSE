@@ -269,7 +269,7 @@ html {
 .chat-messages {
   flex: 1;
   padding: 16px;
-  overflow-y: auto;
+  overflow: auto;
   background: #f8fafc;
 }
 
@@ -279,6 +279,7 @@ html {
   border-radius: 18px;
   max-width: 80%;
   word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .chat-bubble.user {
@@ -292,6 +293,7 @@ html {
   background: white;
   color: #374151;
   border: 1px solid #e5e7eb;
+  max-width: 100%;
 }
 
 .chat-input-container {
@@ -376,3 +378,42 @@ html {
             max-height: 90vh;
             object-fit: contain;
         }
+
+/* IMPROVEMENTS FOR TABLES IN CHAT BUBBLES */
+.chat-bubble table {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.chat-bubble th,
+.chat-bubble td {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  font-size: 13px;
+  border: 1px solid #e5e7eb;
+  padding: 10px 8px;
+  vertical-align: top;
+}
+
+.chat-bubble thead th {
+  background: #4a90e2;
+  color: white;
+  font-weight: 600;
+  border: 1px solid #4a90e2;
+  text-align: left;
+}
+
+.chat-bubble tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.chat-bubble tbody tr:nth-child(odd) {
+  background: #ffffff;
+}
+
+.chat-bubble div[style*="background:#f9f9f9"] {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+

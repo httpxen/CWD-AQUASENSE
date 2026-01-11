@@ -50,8 +50,8 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_me'])) {
         setcookie('remember_me', $new_token, [
             'expires' => time() + (30 * 24 * 60 * 60),
             'path' => '/',
-            'secure' => true,       // Only HTTPS (set to false if testing locally without HTTPS)
-            'httponly' => true,     // Blocks JavaScript access
+            'secure' => true,      // Only HTTPS (set to false if testing locally without HTTPS)
+            'httponly' => true,    // Blocks JavaScript access
             'samesite' => 'Lax'
         ]);
 
@@ -198,7 +198,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   
-  <!-- CLOUDFLARE TURNSTILE -->
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
   <style>
@@ -323,11 +322,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <div class="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
       <div class="text-center mb-10">
-        <div class="logo-container w-20 h-20 flex items-center justify-center mx-auto rounded-3xl shadow-lg mb-8 p-2 bg-gradient-to-br from-blue-100 to-indigo-100">
-          <div class="bg-white rounded-2xl w-16 h-16 flex items-center justify-center shadow-md transform hover:scale-105 transition-transform duration-300">
-            <img class="h-8 w-8" src="assets/icons/AquaSense.png" alt="CWD Logo">
-          </div>
-        </div>
+        <a href="index.php" class="inline-block hover:opacity-80 transition-opacity duration-200">
+            <div class="logo-container w-20 h-20 flex items-center justify-center mx-auto rounded-3xl shadow-lg mb-8 p-2 bg-gradient-to-br from-blue-100 to-indigo-100">
+              <div class="bg-white rounded-2xl w-16 h-16 flex items-center justify-center shadow-md transform hover:scale-105 transition-transform duration-300">
+                <img class="h-8 w-8" src="assets/icons/AquaSense.png" alt="CWD Logo">
+              </div>
+            </div>
+        </a>
         <div class="space-y-2">
           <h1 class="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
             Calamba Water District
@@ -340,7 +341,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
       <div class="card py-7 px-6 shadow-xl rounded-2xl">
 
-        <!-- SUCCESS FROM REGISTER (with URL cleanup) -->
         <?php if (!empty($_GET['reg_success'])): ?>
           <script>
             document.addEventListener('DOMContentLoaded', () => {
@@ -359,7 +359,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           </script>
         <?php endif; ?>
 
-        <!-- SESSION EXPIRED / OTHER SUCCESS MESSAGE -->
         <?php if (!empty($_GET['message'])): ?>
           <script>
             document.addEventListener('DOMContentLoaded', () => {
@@ -373,7 +372,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           </script>
         <?php endif; ?>
 
-        <!-- LOGIN ERROR -->
         <?php if (!empty($error)): ?>
           <script>
             document.addEventListener('DOMContentLoaded', () => {
@@ -383,8 +381,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <?php endif; ?>
 
         <form class="space-y-5" action="" method="POST">
-          <!-- ... your form fields (username, password, etc.) ... -->
-          <!-- Same as your original form, walang binago dito -->
           <div class="group">
             <label for="username" class="block text-sm font-semibold text-gray-700 mb-2 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600 mr-2">
@@ -458,7 +454,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
           </div>
 
-          <!-- CLOUDFLARE TURNSTILE -->
           <div class="mt-5">
             <div class="cf-turnstile" data-sitekey="<?= htmlspecialchars($_ENV['TURNSTILE_SITE_KEY'] ?? '') ?>" data-theme="light"></div>
             <p class="mt-1 text-xs text-gray-500">This site is protected by Cloudflare Turnstile.</p>
@@ -499,7 +494,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </div>
   </div>
 
-  <!-- TOAST CONTAINER -->
   <div id="toastContainer" class="toast-container"></div>
 
   <script>

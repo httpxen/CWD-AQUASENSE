@@ -1,0 +1,650 @@
+<?php
+include 'session_check.php'; // From Step 2 (now fixed with session_name)
+
+// ---------------------------
+// CSRF token
+// ---------------------------
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
+// ---------------------------
+// Helpers
+// ---------------------------
+function sanitize($value) {
+    return trim($value ?? '');
+}
+
+function get_avatar_src($profile_picture, $name) {
+    if ($profile_picture) {
+        return '../' . $profile_picture; // Adjust for superadmin/ subfolder
+    }
+    return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
+}
+
+$alerts = []; // [ ['type' => 'success'|'error'|'info', 'msg' => '...'] ]
+
+// ---------------------------
+// Fetch staff info
+// ---------------------------
+$staff_id = $_SESSION['staff_id'];
+$staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
+$stmt = mysqli_prepare($conn, $staff_query);
+mysqli_stmt_bind_param($stmt, "i", $staff_id);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$staff = mysqli_fetch_assoc($result);
+if (!$staff) {
+    session_unset();
+    session_destroy();
+    header("Location: superadmin_login.php?message=Account not found.");
+    exit();
+}
+
+// ---------------------------
+// NOTIFICATIONS (Separate File)
+// ---------------------------
+include 'includes/notifications.php';
+
+// ---------------------------
+// Fetch dashboard stats
+// ---------------------------
+$total_complaints_query = "SELECT COUNT(*) as total FROM complaints WHERE status IN ('Pending', 'In Progress')";
+$total_complaints_result = mysqli_query($conn, $total_complaints_query);
+if (!$total_complaints_result) die("Query failed: " . mysqli_error($conn));
+$total_complaints = mysqli_fetch_assoc($total_complaints_result)['total'] ?? 0;
+
+$pending_complaints_query = "SELECT COUNT(*) as pending FROM complaints WHERE status = 'Pending'";
+$pending_complaints_result = mysqli_query($conn, $pending_complaints_query);
+if (!$pending_complaints_result) die("Query failed: " . mysqli_error($conn));
+$pending_complaints = mysqli_fetch_assoc($pending_complaints_result)['pending'] ?? 0;
+
+$in_progress_complaints_query = "SELECT COUNT(*) as in_progress FROM complaints WHERE status = 'In Progress'";
+$in_progress_complaints_result = mysqli_query($conn, $in_progress_complaints_query);
+if (!$in_progress_complaints_result) die("Query failed: " . mysqli_error($conn));
+$in_progress_complaints = mysqli_fetch_assoc($in_progress_complaints_result)['in_progress'] ?? 0;
+
+$resolved_complaints_query = "SELECT COUNT(*) as resolved FROM complaints WHERE status = 'Resolved'";
+$resolved_complaints_result = mysqli_query($conn, $resolved_complaints_query);
+if (!$resolved_complaints_result) die("Query failed: " . mysqli_error($conn));
+$resolved_complaints = mysqli_fetch_assoc($resolved_complaints_result)['resolved'] ?? 0;
+
+$closed_complaints_query = "SELECT COUNT(*) as closed FROM complaints WHERE status = 'Closed'";
+$closed_complaints_result = mysqli_query($conn, $closed_complaints_query);
+if (!$closed_complaints_result) die("Query failed: " . mysqli_error($conn));
+$closed_complaints = mysqli_fetch_assoc($closed_complaints_result)['closed'] ?? 0;
+
+$total_feedback_query = "SELECT COUNT(*) as total FROM feedback";
+$total_feedback_result = mysqli_query($conn, $total_feedback_query);
+if (!$total_feedback_result) die("Query failed: " . mysqli_error($conn));
+$total_feedback = mysqli_fetch_assoc($total_feedback_result)['total'] ?? 0;
+
+$active_staff_query = "SELECT COUNT(*) as total FROM staff";
+$active_staff_result = mysqli_query($conn, $active_staff_query);
+if (!$active_staff_result) die("Query failed: " . mysqli_error($conn));
+$active_staff = mysqli_fetch_assoc($active_staff_result)['total'] ?? 0;
+
+$total_customers_query = "SELECT COUNT(*) as total FROM users";
+$total_customers_result = mysqli_query($conn, $total_customers_query);
+if (!$total_customers_result) die("Query failed: " . mysqli_error($conn));
+$total_customers = mysqli_fetch_assoc($total_customers_result)['total'] ?? 0;
+
+// SuperAdmin-specific stats: Role counts
+$admins_count_query = "SELECT COUNT(*) as total FROM staff WHERE role = 'Admin'";
+$admins_count_result = mysqli_query($conn, $admins_count_query);
+if (!$admins_count_result) die("Query failed: " . mysqli_error($conn));
+$admins_count = mysqli_fetch_assoc($admins_count_result)['total'] ?? 0;
+
+$employees_count_query = "SELECT COUNT(*) as total FROM staff WHERE role = 'Employee'";
+$employees_count_result = mysqli_query($conn, $employees_count_query);
+if (!$employees_count_result) die("Query failed: " . mysqli_error($conn));
+$employees_count = mysqli_fetch_assoc($employees_count_result)['total'] ?? 0;
+
+$superadmins_count_query = "SELECT COUNT(*) as total FROM staff WHERE role = 'SuperAdmin'";
+$superadmins_count_result = mysqli_query($conn, $superadmins_count_query);
+if (!$superadmins_count_result) die("Query failed: " . mysqli_error($conn));
+$superadmins_count = mysqli_fetch_assoc($superadmins_count_result)['total'] ?? 0;
+
+// ---------------------------
+// Fetch announcement stats
+// ---------------------------
+$total_announcements_query = "SELECT COUNT(*) as total FROM announcements";
+$total_announcements_result = mysqli_query($conn, $total_announcements_query);
+if (!$total_announcements_result) die("Query failed: " . mysqli_error($conn));
+$total_announcements = mysqli_fetch_assoc($total_announcements_result)['total'] ?? 0;
+
+$active_announcements_query = "SELECT COUNT(*) as active FROM announcements WHERE start_date <= CURDATE() AND end_date >= CURDATE()";
+$active_announcements_result = mysqli_query($conn, $active_announcements_query);
+if (!$active_announcements_result) die("Query failed: " . mysqli_error($conn));
+$active_announcements = mysqli_fetch_assoc($active_announcements_result)['active'] ?? 0;
+
+$upcoming_announcements_query = "SELECT COUNT(*) as upcoming FROM announcements WHERE start_date > CURDATE()";
+$upcoming_announcements_result = mysqli_query($conn, $upcoming_announcements_query);
+if (!$upcoming_announcements_result) die("Query failed: " . mysqli_error($conn));
+$upcoming_announcements = mysqli_fetch_assoc($upcoming_announcements_result)['upcoming'] ?? 0;
+
+// Fetch only latest 5 UNRESOLVED complaints
+$recent_complaints_query = "SELECT c.complaint_id, c.category, c.description, c.status, c.created_at, CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.middle_name, ''), ' ', COALESCE(u.last_name, '')) as user_name 
+                           FROM complaints c 
+                           LEFT JOIN users u ON c.user_id = u.id 
+                           WHERE c.status NOT IN ('Resolved', 'Closed') 
+                           ORDER BY c.created_at DESC LIMIT 5";
+$recent_complaints_result = mysqli_query($conn, $recent_complaints_query);
+if (!$recent_complaints_result) die("Query failed: " . mysqli_error($conn));
+$recent_complaints = [];
+while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
+    $recent_complaints[] = $row;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard | CWD AquaSense SuperAdmin</title>
+    <link rel="icon" type="image/png" href="../assets/icons/AquaSense2.png" />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen flex">
+        <!-- Sidebar -->
+        <div class="sidebar w-64 bg-white shadow-lg fixed h-full z-30">
+            <div class="flex flex-col h-full">
+                <div class="p-6">
+                    <div class="flex items-center space-x-3"> 
+                        <img src="../assets/icons/AquaSense.png" alt="CWD AquaSense Logo" class="w-16 h-16 rounded-lg object-contain bg-white p-1 flex-shrink-0">
+                        <div class="flex-1">
+                            <h1 class="text-xl font-bold text-gray-900">AquaSense</h1>
+                            <p class="text-xs text-gray-500">SuperAdmin Portal</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <nav class="flex-1 py-2 px-4 space-y-2">
+                    <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 border border-blue-200 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                        </svg>
+                        Dashboard
+                    </a>
+                    <a href="manage_complaints.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                        </svg>
+                        Manage Complaints
+                    </a>
+                    <a href="manage_staff.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                        </svg>
+                        Manage Staff
+                    </a>
+                    <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                        </svg>
+                        Manage Users
+                    </a>
+                    <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                        </svg>
+                        View Feedback
+                    </a>
+                    <a href="announcements.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
+                        </svg>
+                        Announcement Section
+                    </a>
+                </nav>
+
+                <!-- Staff Info & Logout -->
+                <div class="p-4 border-t border-gray-100">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <div class="relative avatar-glow">
+                            <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                            <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-900"><?php echo htmlspecialchars($staff['name']); ?></p>
+                            <p class="text-xs text-gray-500"><?php echo htmlspecialchars($staff['role']); ?></p>
+                        </div>
+                    </div>
+                    <a href="../admin_logout.php" class="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2 text-red-600">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
+                        Sign Out
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="flex-1">
+            <header class="header-2025 sticky top-0 z-20">
+                <div class="px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <!-- Left: Clean & Minimal -->
+                        <div class="flex items-center space-x-4">
+                        </div>
+                        <!-- Right: Essential Actions -->
+                        <div class="flex items-center space-x-4">
+
+                            <!-- NOTIFICATION WITH DROPDOWN -->
+                            <div class="relative" id="notificationContainer">
+                                <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
+                                    </svg>
+                                    <?php if ($new_count > 0): ?>
+                                        <div class="notification-badge"><?php echo $new_count > 99 ? '99+' : $new_count; ?></div>
+                                    <?php endif; ?>
+                                </button>
+
+                                <!-- Dropdown -->
+                                <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+                                    <div class="px-4 py-3 border-b border-gray-100">
+                                        <h3 class="text-sm font-semibold text-gray-900">New Complaints</h3>
+                                        <p class="text-xs text-gray-500"><?php echo $new_count; ?> pending since your last login</p>
+                                    </div>
+                                    <div class="max-h-96 overflow-y-auto">
+                                        <?php if (empty($notifications)): ?>
+                                            <p class="text-center text-sm text-gray-500 py-8">No new complaints.</p>
+                                        <?php else: ?>
+                                            <?php foreach ($notifications as $n): ?>
+                                                <a href="manage_complaints.php?status=Pending" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                    <div class="flex items-start space-x-3">
+                                                        <div class="w-2 h-2 bg-red-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="text-sm font-medium text-gray-900 truncate">
+                                                                <?php echo htmlspecialchars($n['category']); ?>
+                                                            </p>
+                                                            <p class="text-xs text-gray-500">
+                                                                by <?php echo htmlspecialchars(trim($n['user_name']) ?: 'Anonymous'); ?>
+                                                            </p>
+                                                            <p class="text-xs text-gray-400">
+                                                                <?php echo date('M j, Y g:i A', strtotime($n['created_at'])); ?>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                                        <a href="manage_complaints.php?status=Pending" class="text-sm font-medium text-blue-600 hover:text-blue-800">
+                                            View all pending complaints
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Profile Dropdown -->
+                            <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
+                                <div class="avatar-glow">
+                                    <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                                    <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
+                                </div>
+                                <div class="hidden md:block">
+                                    <p class="text-sm font-semibold text-gray-900 truncate max-w-32"><?php echo htmlspecialchars($staff['name']); ?></p>
+                                    <p class="text-xs text-gray-500 truncate max-w-32"><?php echo htmlspecialchars($staff['role']); ?></p>
+                                </div>
+                                <i class="fas fa-chevron-down text-gray-400 text-sm ml-1 transition-transform duration-200 group-hover:text-gray-600"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main class="p-6 space-y-6">
+                <!-- Alerts -->
+                <?php if (!empty($alerts)): ?>
+                    <?php foreach ($alerts as $a): ?>
+                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : ($a['type'] === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'); ?>">
+                            <div class="flex items-start">
+                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : ($a['type'] === 'error' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-info'); ?>"></i>
+                                <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
+                <!-- Stats Overview -->
+                <div class="stats-grid">
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Total Complaints</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $total_complaints; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-red-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Pending Complaints</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $pending_complaints; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-yellow-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">In Progress</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $in_progress_complaints; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-blue-600">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 00 13.803-3.7M4.031 9.865a8.25 8.25 0 01 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Resolved Complaints</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $resolved_complaints; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-green-600">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Closed Complaints</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $closed_complaints; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Total Feedback</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $total_feedback; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-blue-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Active Staff</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $active_staff; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-green-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Total Customers</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $total_customers; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-indigo-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <!-- SuperAdmin-specific stats -->
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Admins</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $admins_count; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-purple-600">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Employees</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $employees_count; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-indigo-600">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">SuperAdmins</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $superadmins_count; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-red-600">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Total Announcements</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $total_announcements; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-blue-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Active Announcements</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $active_announcements; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-green-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="card p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm font-medium text-gray-600">Upcoming Announcements</p>
+                                <p class="text-3xl font-bold text-gray-900"><?php echo $upcoming_announcements; ?></p>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-yellow-500">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Complaints Table -->
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div class="xl:col-span-2 card p-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">Recent Complaints</h2>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <?php if (empty($recent_complaints)): ?>
+                                        <tr>
+                                            <td colspan="4" class="px-6 py-4 text-center text-gray-500">No recent complaints.</td>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($recent_complaints as $complaint): ?>
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                    <?php echo htmlspecialchars($complaint['category']); ?>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <?php echo htmlspecialchars(trim($complaint['user_name']) ?: 'Anonymous'); ?>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $complaint['status'] === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'; ?>">
+                                                        <?php echo htmlspecialchars($complaint['status']); ?>
+                                                    </span>
+                                                </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <?php echo date('M j, Y', strtotime($complaint['created_at'])); ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-4 flex justify-between">
+                            <a href="manage_complaints.php" class="text-sm text-blue-600 hover:text-blue-900">View All Complaints</a>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="card p-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+                        <div class="space-y-3">
+                            <a href="manage_complaints.php" class="block p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
+                                <div class="flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-600 mr-3">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                                    </svg>
+                                    <span class="text-sm font-medium text-gray-700">Manage Complaints</span>
+                                </div>
+                            </a>
+                            <a href="view_feedback.php" class="block p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors">
+                                <div class="flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-600 mr-3">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                                    </svg>
+                                    <span class="text-sm font-medium text-gray-700">View Feedback</span>
+                                </div>
+                            </a>
+                            <a href="manage_staff.php" class="block p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors">
+                                <div class="flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-purple-600 mr-3">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                                    </svg>
+                                    <span class="text-sm font-medium text-gray-700">Manage Staff</span>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Mobile Menu Toggle -->
+    <button id="mobileMenuToggle" class="fixed top-4 left-4 z-40 p-2 rounded-lg text-gray-600 bg-white shadow-lg md:hidden">
+        <i class="fas fa-bars text-lg"></i>
+    </button>
+
+    <!-- Profile Dropdown Menu -->
+    <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
+
+    <script>
+        // Mobile menu toggle
+        document.getElementById('mobileMenuToggle').addEventListener('click', function() {
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('translate-x-0');
+        });
+
+        // Responsive sidebar
+        window.addEventListener('resize', function() {
+            const sidebar = document.querySelector('.sidebar');
+            if (window.innerWidth >= 768) {
+                sidebar.classList.remove('-translate-x-full');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+            }
+        });
+
+        // Profile dropdown
+        const profileDropdown = document.getElementById('profileDropdown');
+        const profileDropdownMenu = document.getElementById('profileDropdownMenu');
+
+        profileDropdown.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (profileDropdownMenu.classList.contains('hidden')) {
+                profileDropdownMenu.innerHTML = `
+                    <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        My Profile
+                    </a>
+                    <div class="border-t border-gray-100 my-1"></div>
+                    <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
+                        Sign Out
+                    </a>
+                `;
+                profileDropdownMenu.classList.remove('hidden');
+                const rect = profileDropdown.getBoundingClientRect();
+                profileDropdownMenu.style.right = '1.5rem';
+                profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
+            } else {
+                profileDropdownMenu.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', function() {
+            profileDropdownMenu.classList.add('hidden');
+        });
+
+        // Notification dropdown
+        const notificationBtn = document.getElementById('notificationBtn');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        const notificationContainer = document.getElementById('notificationContainer');
+
+        notificationBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            notificationDropdown.classList.toggle('hidden');
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!notificationContainer.contains(e.target)) {
+                notificationDropdown.classList.add('hidden');
+            }
+        });
+
+        // Auto-refresh every 2 minutes
+        setInterval(function() {
+            location.reload();
+        }, 120000);
+    </script>
+</body>
+</html>
+
+<?php
+// Cleanup
+if (isset($stmt)) { mysqli_stmt_close($stmt); }
+mysqli_close($conn);
+?>

@@ -26,16 +26,20 @@ $csrf_token = $_SESSION['csrf_token'];
 // ---------------------------
 // Helpers
 // ---------------------------
-function sanitize($value) {
-    return trim($value ?? '');
+if (!function_exists('sanitize')) {
+    function sanitize($value) {
+        return trim($value ?? '');
+    }
 }
 
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) {
-        return '../' . $profile_picture;
+        return '../' . htmlspecialchars($profile_picture);
     }
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
+
+$alerts = [];
 
 // ---------------------------
 // Fetch current staff info
@@ -55,227 +59,232 @@ if (!$current_staff) {
 mysqli_stmt_close($stmt);
 
 // ---------------------------
-// Handle POST requests (AJAX)
+// Handle AJAX requests first
 // ---------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    header('Content-Type: application/json');
-
+// Get single staff data for view
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_staff') {
     if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
-        echo json_encode(['success' => false, 'msg' => 'Invalid CSRF token.']);
-        exit();
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit;
     }
+    $staff_id_get = (int)($_POST['staff_id'] ?? 0);
+    if ($staff_id_get <= 0) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Invalid staff ID.']);
+        exit;
+    }
+    $query = "
+        SELECT 
+            staff_id, name, profile_picture, email, role, created_at, last_login,
+            CASE 
+                WHEN last_login IS NOT NULL AND UNIX_TIMESTAMP(last_login) > UNIX_TIMESTAMP(NOW()) - 300 THEN 'Online'
+                ELSE 'Offline'
+            END as status
+        FROM staff WHERE staff_id = ?";
+    $stmt = mysqli_prepare($conn, $query);
+    mysqli_stmt_bind_param($stmt, "i", $staff_id_get);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $staff = mysqli_fetch_assoc($result);
+    mysqli_stmt_close($stmt);
+    if (!$staff) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Staff not found.']);
+        exit;
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'staff' => $staff]);
+    exit;
+}
 
-    $action = sanitize($_POST['action'] ?? '');
+// Get all staff data for refresh (with search, filters, and pagination applied)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_all_staff') {
+    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+        exit;
+    }
+    $search = trim($_POST['search'] ?? '');
+    $role_filter = $_POST['role'] ?? 'all';
+    $status_filter = $_POST['status'] ?? 'all';
+    $page = max(1, (int)($_POST['page'] ?? 1));
+    $per_page = 10;
+    $offset = ($page - 1) * $per_page;
 
-    if ($action === 'get_staff') {
-        $id = (int)($_POST['staff_id'] ?? 0);
-        if ($id <= 0) {
-            echo json_encode(['success' => false, 'msg' => 'Invalid staff ID.']);
-            exit();
+    // Build WHERE conditions and params
+    $where_conditions = [];
+    $where_params = [];
+    if ($search !== '') {
+        $like = "%$search%";
+        $where_conditions[] = "(name LIKE ? OR email LIKE ? OR role LIKE ?)";
+        $where_params = array_merge($where_params, [$like, $like, $like]);
+    }
+    if ($role_filter !== 'all') {
+        $where_conditions[] = "role = ?";
+        $where_params[] = $role_filter;
+    }
+    if ($status_filter !== 'all') {
+        $where_conditions[] = "(CASE WHEN last_login IS NOT NULL AND UNIX_TIMESTAMP(last_login) > UNIX_TIMESTAMP(NOW()) - 300 THEN 'Online' ELSE 'Offline' END = ?)";
+        $where_params[] = $status_filter;
+    }
+    $where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
+
+    // Staff query with role-based ordering
+    $staff_query = "
+        SELECT 
+            staff_id, name, 
+            email, role, profile_picture, created_at, last_login,
+            CASE 
+                WHEN last_login IS NOT NULL AND UNIX_TIMESTAMP(last_login) > UNIX_TIMESTAMP(NOW()) - 300 THEN 'Online'
+                ELSE 'Offline'
+            END as is_online,
+            CASE 
+                WHEN last_login IS NOT NULL AND UNIX_TIMESTAMP(last_login) > UNIX_TIMESTAMP(NOW()) - 300 THEN 'bg-green-100 text-green-800'
+                ELSE 'bg-red-100 text-red-800'
+            END as status_class
+        FROM staff $where_clause 
+        ORDER BY 
+            CASE role 
+                WHEN 'SuperAdmin' THEN 1
+                WHEN 'Admin' THEN 2
+                WHEN 'Employee' THEN 3
+                ELSE 4
+            END ASC,
+            created_at DESC 
+        LIMIT ? OFFSET ?";
+
+    $full_params = array_merge($where_params, [$per_page, $offset]);
+    $params_types = str_repeat('s', count($where_params)) . 'ii';
+
+    $stmt = mysqli_prepare($conn, $staff_query);
+    $staff_list = [];
+    if ($stmt) {
+        // Fix for passing by reference
+        $bind_params = [$stmt, $params_types];
+        foreach ($full_params as $key => $value) {
+            $bind_params[] =& $full_params[$key];
         }
-        $q = "SELECT staff_id, name, email, role, last_login FROM staff WHERE staff_id = ?";
-        $stmt = mysqli_prepare($conn, $q);
-        mysqli_stmt_bind_param($stmt, "i", $id);
+        call_user_func_array('mysqli_stmt_bind_param', $bind_params);
         mysqli_stmt_execute($stmt);
-        $res = mysqli_stmt_get_result($stmt);
-        $staff = mysqli_fetch_assoc($res);
+        $staff_result = mysqli_stmt_get_result($stmt);
+        while ($row = mysqli_fetch_assoc($staff_result)) {
+            $staff_list[] = $row;
+        }
         mysqli_stmt_close($stmt);
-
-        if ($staff) {
-            echo json_encode(['success' => true, 'staff' => $staff]);
-        } else {
-            echo json_encode(['success' => false, 'msg' => 'Staff not found.']);
-        }
-        exit();
     }
 
-    if ($action === 'add') {
-        $name = sanitize($_POST['name']);
-        $email = sanitize($_POST['email']);
-        $role = sanitize($_POST['role']);
-        $password = $_POST['password'];
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'staff' => $staff_list]);
+    exit;
+}
 
-        if (empty($name) || empty($email) || empty($role) || empty($password)) {
-            echo json_encode(['success' => false, 'msg' => 'All fields are required.']);
-            exit();
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            echo json_encode(['success' => false, 'msg' => 'Invalid email format.']);
-            exit();
-        }
-
-        $check_email = "SELECT staff_id FROM staff WHERE email = ?";
-        $check_stmt = mysqli_prepare($conn, $check_email);
-        mysqli_stmt_bind_param($check_stmt, "s", $email);
-        mysqli_stmt_execute($check_stmt);
-        if (mysqli_stmt_get_result($check_stmt)->num_rows > 0) {
-            mysqli_stmt_close($check_stmt);
-            echo json_encode(['success' => false, 'msg' => 'Email already exists.']);
-            exit();
-        }
-        mysqli_stmt_close($check_stmt);
-
-        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-        $profile_picture = NULL;
-
-        if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-            $upload_dir = '../assets/uploads/staff/';
-            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
-            $file_extension = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
-            $file_name = uniqid() . '.' . $file_extension;
-            $upload_path = $upload_dir . $file_name;
-            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                $profile_picture = '../assets/uploads/staff/' . $file_name;
-            }
-        }
-
-        $insert_query = "INSERT INTO staff (name, profile_picture, email, role, password) VALUES (?, ?, ?, ?, ?)";
-        $insert_stmt = mysqli_prepare($conn, $insert_query);
-        mysqli_stmt_bind_param($insert_stmt, "sssss", $name, $profile_picture, $email, $role, $hashed_password);
-        if (mysqli_stmt_execute($insert_stmt)) {
-            $new_staff_id = mysqli_insert_id($conn);
-            echo json_encode([
-                'success' => true,
-                'msg' => 'Staff added successfully!',
-                'staff_id' => $new_staff_id,
-                'profile_picture' => $profile_picture
-            ]);
-        } else {
-            echo json_encode(['success' => false, 'msg' => 'Database error.']);
-        }
-        mysqli_stmt_close($insert_stmt);
-        exit();
+// Handle update_activity for heartbeat
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_activity') {
+    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
+        http_response_code(403);
+        exit;
     }
-
-    elseif ($action === 'edit') {
-        $edit_id = (int)($_POST['staff_id'] ?? 0);
-        $name = sanitize($_POST['name']);
-        $email = sanitize($_POST['email']);
-        $role = sanitize($_POST['role']);
-        $password = $_POST['password'] ?? '';
-
-        if ($edit_id <= 0 || empty($name) || empty($email) || empty($role)) {
-            echo json_encode(['success' => false, 'msg' => 'Invalid data.']);
-            exit();
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            echo json_encode(['success' => false, 'msg' => 'Invalid email.']);
-            exit();
-        }
-
-        $check_email = "SELECT staff_id FROM staff WHERE email = ? AND staff_id != ?";
-        $check_stmt = mysqli_prepare($conn, $check_email);
-        mysqli_stmt_bind_param($check_stmt, "si", $email, $edit_id);
-        mysqli_stmt_execute($check_stmt);
-        if (mysqli_stmt_get_result($check_stmt)->num_rows > 0) {
-            mysqli_stmt_close($check_stmt);
-            echo json_encode(['success' => false, 'msg' => 'Email already in use.']);
-            exit();
-        }
-        mysqli_stmt_close($check_stmt);
-
-        $update_fields = "name = ?, email = ?, role = ?";
-        $params = [$name, $email, $role];
-        $types = "sss";
-
-        if (!empty($password)) {
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            $update_fields .= ", password = ?";
-            $params[] = $hashed_password;
-            $types .= "s";
-        }
-
-        $new_profile_picture = null;
-        if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-            $old_query = "SELECT profile_picture FROM staff WHERE staff_id = ?";
-            $old_stmt = mysqli_prepare($conn, $old_query);
-            mysqli_stmt_bind_param($old_stmt, "i", $edit_id);
-            mysqli_stmt_execute($old_stmt);
-            $old_result = mysqli_stmt_get_result($old_stmt);
-            $old_staff = mysqli_fetch_assoc($old_result);
-            if ($old_staff['profile_picture'] && file_exists('../' . $old_staff['profile_picture'])) {
-                unlink('../' . $old_staff['profile_picture']);
-            }
-            mysqli_stmt_close($old_stmt);
-
-            $upload_dir = '../assets/uploads/staff/';
-            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
-            $file_extension = pathinfo($_FILES['profile_picture']['name'], PATHINFO_EXTENSION);
-            $file_name = uniqid() . '.' . $file_extension;
-            $upload_path = $upload_dir . $file_name;
-            if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                $new_profile_picture = 'assets/uploads/staff/' . $file_name;
-                $update_fields .= ", profile_picture = ?";
-                $params[] = $new_profile_picture;
-                $types .= "s";
-            }
-        }
-
-        $update_query = "UPDATE staff SET $update_fields WHERE staff_id = ?";
-        $params[] = $edit_id;
-        $types .= "i";
-        $update_stmt = mysqli_prepare($conn, $update_query);
-        mysqli_stmt_bind_param($update_stmt, $types, ...$params);
-        if (mysqli_stmt_execute($update_stmt)) {
-            echo json_encode([
-                'success' => true,
-                'msg' => 'Staff updated successfully!',
-                'profile_picture' => $new_profile_picture
-            ]);
-        } else {
-            echo json_encode(['success' => false, 'msg' => 'Update failed.']);
-        }
+    $staff_id = $_SESSION['staff_id'] ?? null;
+    if ($staff_id) {
+        $update_activity_query = "UPDATE staff SET last_login = NOW() WHERE staff_id = ?";
+        $update_stmt = mysqli_prepare($conn, $update_activity_query);
+        mysqli_stmt_bind_param($update_stmt, "i", $staff_id);
+        mysqli_stmt_execute($update_stmt);
         mysqli_stmt_close($update_stmt);
-        exit();
     }
-
-    elseif ($action === 'delete') {
-        $delete_id = (int)($_POST['staff_id'] ?? 0);
-        if ($delete_id <= 0 || $delete_id === $staff_id) {
-            echo json_encode(['success' => false, 'msg' => 'Cannot delete current user.']);
-            exit();
-        }
-
-        $delete_assign = "DELETE FROM complaint_assignments WHERE staff_id = ?";
-        $delete_assign_stmt = mysqli_prepare($conn, $delete_assign);
-        mysqli_stmt_bind_param($delete_assign_stmt, "i", $delete_id);
-        mysqli_stmt_execute($delete_assign_stmt);
-        mysqli_stmt_close($delete_assign_stmt);
-
-        $delete_query = "SELECT profile_picture FROM staff WHERE staff_id = ?";
-        $delete_stmt = mysqli_prepare($conn, $delete_query);
-        mysqli_stmt_bind_param($delete_stmt, "i", $delete_id);
-        mysqli_stmt_execute($delete_stmt);
-        $delete_result = mysqli_stmt_get_result($delete_stmt);
-        $to_delete = mysqli_fetch_assoc($delete_result);
-        if ($to_delete['profile_picture'] && file_exists('../' . $to_delete['profile_picture'])) {
-            unlink('../' . $to_delete['profile_picture']);
-        }
-        mysqli_stmt_close($delete_stmt);
-
-        $final_delete = "DELETE FROM staff WHERE staff_id = ?";
-        $final_stmt = mysqli_prepare($conn, $final_delete);
-        mysqli_stmt_bind_param($final_stmt, "i", $delete_id);
-        if (mysqli_stmt_execute($final_stmt)) {
-            echo json_encode(['success' => true, 'msg' => 'Staff deleted successfully!']);
-        } else {
-            echo json_encode(['success' => false, 'msg' => 'Delete failed.']);
-        }
-        mysqli_stmt_close($final_stmt);
-        exit();
-    }
-
-    echo json_encode(['success' => false, 'msg' => 'Invalid action.']);
-    exit();
+    http_response_code(200);
+    exit;
 }
 
 // ---------------------------
-// Fetch all staff
+// Fetch staff with pagination, search, and filters
 // ---------------------------
-$all_staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at, last_login FROM staff ORDER BY created_at DESC";
-$all_staff_result = mysqli_query($conn, $all_staff_query);
-$all_staff = [];
-while ($row = mysqli_fetch_assoc($all_staff_result)) {
-    $all_staff[] = $row;
+$per_page = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$offset = ($page - 1) * $per_page;
+$search = trim($_GET['search'] ?? '');
+$role_filter = $_GET['role'] ?? 'all';
+$status_filter = $_GET['status'] ?? 'all';
+
+// Build WHERE conditions and params (same as AJAX)
+$where_conditions = [];
+$where_params = [];
+if ($search !== '') {
+    $like = "%$search%";
+    $where_conditions[] = "(name LIKE ? OR email LIKE ? OR role LIKE ?)";
+    $where_params = array_merge($where_params, [$like, $like, $like]);
 }
+if ($role_filter !== 'all') {
+    $where_conditions[] = "role = ?";
+    $where_params[] = $role_filter;
+}
+if ($status_filter !== 'all') {
+    $where_conditions[] = "(CASE WHEN last_login IS NOT NULL AND UNIX_TIMESTAMP(last_login) > UNIX_TIMESTAMP(NOW()) - 300 THEN 'Online' ELSE 'Offline' END = ?)";
+    $where_params[] = $status_filter;
+}
+$where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
+
+// Staff query - ONLINE/OFFLINE STATUS LOGIC with role-based ordering
+$staff_query = "
+    SELECT 
+        staff_id, name, 
+        email, role, profile_picture, created_at, last_login,
+        CASE 
+            WHEN last_login IS NOT NULL AND UNIX_TIMESTAMP(last_login) > UNIX_TIMESTAMP(NOW()) - 300 THEN 'Online'
+            ELSE 'Offline'
+        END as status 
+    FROM staff $where_clause 
+    ORDER BY 
+        CASE role 
+            WHEN 'SuperAdmin' THEN 1
+            WHEN 'Admin' THEN 2
+            WHEN 'Employee' THEN 3
+            ELSE 4
+        END ASC,
+        created_at DESC 
+    LIMIT ? OFFSET ?";
+
+$full_params = array_merge($where_params, [$per_page, $offset]);
+$params_types = str_repeat('s', count($where_params)) . 'ii';
+
+$stmt = mysqli_prepare($conn, $staff_query);
+$staff_list = [];
+if ($stmt) {
+    // Fix for passing by reference
+    $bind_params = [$stmt, $params_types];
+    foreach ($full_params as $key => $value) {
+        $bind_params[] =& $full_params[$key];
+    }
+    call_user_func_array('mysqli_stmt_bind_param', $bind_params);
+    mysqli_stmt_execute($stmt);
+    $staff_result = mysqli_stmt_get_result($stmt);
+    while ($row = mysqli_fetch_assoc($staff_result)) {
+        $staff_list[] = $row;
+    }
+    mysqli_stmt_close($stmt);
+}
+
+// Total count
+$total_query = "SELECT COUNT(*) as total FROM staff $where_clause";
+$stmt_total = mysqli_prepare($conn, $total_query);
+$total_staff = 0;
+if ($stmt_total) {
+    if (!empty($where_params)) {
+        $types_count = str_repeat('s', count($where_params));
+        // Fix for passing by reference
+        $bind_params_count = [$stmt_total, $types_count];
+        foreach ($where_params as $key => $value) {
+            $bind_params_count[] =& $where_params[$key];
+        }
+        call_user_func_array('mysqli_stmt_bind_param', $bind_params_count);
+    }
+    mysqli_stmt_execute($stmt_total);
+    $total_result = mysqli_stmt_get_result($stmt_total);
+    $total_staff = mysqli_fetch_assoc($total_result)['total'];
+    mysqli_stmt_close($stmt_total);
+}
+$total_pages = ceil($total_staff / $per_page);
 ?>
 
 <!DOCTYPE html>
@@ -292,18 +301,19 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
-        <!-- Sidebar -->
+        <!-- SIDEBAR -->
         <div class="sidebar w-64 bg-white shadow-lg fixed h-full z-30">
             <div class="flex flex-col h-full">
                 <div class="p-6">
                     <div class="flex items-center space-x-3"> 
-                        <img src="../assets/icons/AquaSense.png" alt="Logo" class="w-16 h-16 rounded-lg object-contain bg-white p-1">
+                        <img src="../assets/icons/AquaSense.png" alt="CWD AquaSense Logo" class="w-16 h-16 rounded-lg object-contain bg-white p-1 flex-shrink-0">
                         <div class="flex-1">
                             <h1 class="text-xl font-bold text-gray-900">AquaSense</h1>
                             <p class="text-xs text-gray-500">Admin Portal</p>
                         </div>
                     </div>
                 </div>
+
                 <nav class="flex-1 py-2 px-4 space-y-2">
                     <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
@@ -342,10 +352,11 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
                         Announcement Section
                     </a>
                 </nav>
+
                 <div class="p-4 border-t border-gray-100">
                     <div class="flex items-center space-x-3 mb-4">
                         <div class="relative avatar-glow">
-                            <img src="<?php echo htmlspecialchars(get_avatar_src($current_staff['profile_picture'], $current_staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                            <img src="<?php echo get_avatar_src($current_staff['profile_picture'], $current_staff['name']); ?>" alt="<?= htmlspecialchars($current_staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
                             <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                         </div>
                         <div>
@@ -363,17 +374,16 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             </div>
         </div>
 
-        <!-- Main Content -->
+        <!-- Main -->
         <div class="flex-1">
             <header class="header-2025 sticky top-0 z-20">
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-4"></div>
                         <div class="flex items-center space-x-4">
-                            <!-- Profile Dropdown - SAME AS DASHBOARD -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
-                                    <img src="<?php echo htmlspecialchars(get_avatar_src($current_staff['profile_picture'], $current_staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
+                                    <img src="<?php echo get_avatar_src($current_staff['profile_picture'], $current_staff['name']); ?>" alt="<?= htmlspecialchars($current_staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover"/>
                                     <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 border-2 border-white rounded-full animate-gentle-pulse"></div>
                                 </div>
                                 <div class="hidden md:block">
@@ -388,60 +398,98 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
             </header>
 
             <main class="p-6 space-y-6">
+                <!-- Alerts -->
+                <?php if (!empty($alerts)): ?>
+                    <?php foreach ($alerts as $a): ?>
+                        <div class="status <?php echo $a['type'] === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'; ?> rounded-lg p-4">
+                            <div class="flex items-start">
+                                <i class="mr-2 mt-0.5 <?php echo $a['type'] === 'success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'; ?>"></i>
+                                <p class="text-sm font-medium"><?php echo htmlspecialchars($a['msg']); ?></p>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+
                 <!-- Staff Table -->
                 <div class="card p-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-lg font-semibold text-gray-900">Staff Members</h2>
-                        <button onclick="openAddModal()" class="btn-primary flex items-center px-4 py-2 rounded-lg text-sm font-medium">
-                            <i class="fas fa-plus mr-2"></i>Add New Staff
-                        </button>
+                    <div class="flex flex-col md:flex-row justify-between items-center mb-6">
+                        <h2 class="text-lg font-semibold text-gray-900">Manage Staff</h2>
+                        <div class="flex items-center space-x-2 mt-4 md:mt-0">
+                            <form id="searchForm" action="" method="GET" class="flex items-center space-x-2">
+                                <input type="hidden" name="page" value="1">
+                                <input type="text" id="searchInput" name="search" class="pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search staff..." value="<?php echo htmlspecialchars($search); ?>">
+                                <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                <?php if ($search): ?>
+                                    <button type="button" id="clearSearch" class="text-gray-400 hover:text-gray-600 mr-2">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                <?php endif; ?>
+                                <select name="role" id="roleFilter" class="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="all" <?= $role_filter === 'all' ? 'selected' : '' ?>>All Roles</option>
+                                    <option value="SuperAdmin" <?= $role_filter === 'SuperAdmin' ? 'selected' : '' ?>>SuperAdmin</option>
+                                    <option value="Admin" <?= $role_filter === 'Admin' ? 'selected' : '' ?>>Admin</option>
+                                    <option value="Employee" <?= $role_filter === 'Employee' ? 'selected' : '' ?>>Employee</option>
+                                </select>
+                                <select name="status" id="statusFilter" class="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="all" <?= $status_filter === 'all' ? 'selected' : '' ?>>All Status</option>
+                                    <option value="Online" <?= $status_filter === 'Online' ? 'selected' : '' ?>>Online</option>
+                                    <option value="Offline" <?= $status_filter === 'Offline' ? 'selected' : '' ?>>Offline</option>
+                                </select>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Apply</button>
+                            </form>
+                        </div>
                     </div>
+
                     <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
+                        <table class="min-w-full divide-y divide-gray-200" style="table-layout: fixed;">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avatar</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avatar</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200" id="staffTableBody">
-                                <?php if (empty($all_staff)): ?>
-                                    <tr><td colspan="7" class="px-6 py-4 text-center text-gray-500">No staff members found.</td></tr>
+                                <?php if (empty($staff_list)): ?>
+                                    <tr>
+                                        <td colspan="7" class="px-3 py-4 text-center text-gray-500">No staff members found.</td>
+                                    </tr>
                                 <?php else: ?>
-                                    <?php foreach ($all_staff as $s): ?>
-                                        <?php 
-                                        $is_online = isset($s['last_login']) && $s['last_login'] && (strtotime($s['last_login']) > (time() - 300)); // 5 minutes threshold for "Online"
-                                        ?>
+                                    <?php foreach ($staff_list as $staff): ?>
                                         <tr class="hover:bg-gray-50">
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <img src="<?php echo htmlspecialchars(get_avatar_src($s['profile_picture'], $s['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
+                                            <td class="px-3 py-4 whitespace-nowrap">
+                                                <img src="<?php echo get_avatar_src($staff['profile_picture'], $staff['name']); ?>" alt="<?= htmlspecialchars($staff['name']) ?>'s avatar" class="w-10 h-10 rounded-full object-cover">
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($s['name']); ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($s['email']); ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
+                                            <td class="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                <?php echo htmlspecialchars($staff['name']); ?>
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <?php echo htmlspecialchars($staff['email']); ?>
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap">
                                                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
-                                                    <?php echo htmlspecialchars($s['role']); ?>
+                                                    <?php echo htmlspecialchars($staff['role']); ?>
                                                 </span>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $is_online ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
-                                                    <?php echo $is_online ? 'Online' : 'Offline'; ?>
+                                            <td class="px-3 py-4 whitespace-nowrap">
+                                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $staff['status'] === 'Online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
+                                                    <?php echo $staff['status']; ?>
                                                 </span>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?php echo date('M j, Y', strtotime($s['created_at'])); ?>
+                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <?php echo date('M j, Y', strtotime($staff['created_at'])); ?>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <button onclick="editStaff(<?php echo $s['staff_id']; ?>)" class="text-blue-600 hover:text-blue-900 mr-3">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
-                                                <button onclick="deleteStaff(<?php echo $s['staff_id']; ?>)" class="text-red-600 hover:text-red-900">
-                                                    <i class="fas fa-trash"></i>
+                                            <td class="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <button class="view-btn text-blue-600 hover:text-blue-900 mr-3" data-id="<?php echo $staff['staff_id']; ?>" title="View Details">
+                                                    <i class="fas fa-eye"></i>
                                                 </button>
                                             </td>
                                         </tr>
@@ -450,8 +498,48 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- Pagination -->
+                    <?php if ($total_pages > 1): ?>
+                        <div class="mt-6 flex justify-between items-center">
+                            <div class="text-sm text-gray-500">
+                                Showing <?= count($staff_list) ?> of <?= $total_staff ?> staff members
+                            </div>
+                            <div class="flex space-x-2">
+                                <?php if ($page > 1): ?>
+                                    <a href="?page=<?= $page - 1 ?>&search=<?= urlencode($search) ?>&role=<?= urlencode($role_filter) ?>&status=<?= urlencode($status_filter) ?>" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Previous</a>
+                                <?php endif; ?>
+                                <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
+                                    <a href="?page=<?= $i ?>&search=<?= urlencode($search) ?>&role=<?= urlencode($role_filter) ?>&status=<?= urlencode($status_filter) ?>" class="px-4 py-2 text-sm font-medium <?= $i === $page ? 'text-white bg-blue-600' : 'text-gray-700 bg-white' ?> border border-gray-300 rounded-lg hover:bg-gray-50"><?= $i ?></a>
+                                <?php endfor; ?>
+                                <?php if ($page < $total_pages): ?>
+                                    <a href="?page=<?= $page + 1 ?>&search=<?= urlencode($search) ?>&role=<?= urlencode($role_filter) ?>&status=<?= urlencode($status_filter) ?>" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Next</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </main>
+        </div>
+    </div>
+
+    <!-- View Modal -->
+    <div id="viewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold text-gray-900">Staff Details</h3>
+                    <button type="button" id="closeViewIcon" class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div id="staffDetails">
+                    <!-- Content will be populated here -->
+                </div>
+                <div class="flex justify-end mt-8 pt-4 border-t border-gray-200">
+                    <button type="button" id="closeView" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">Close</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -460,329 +548,284 @@ while ($row = mysqli_fetch_assoc($all_staff_result)) {
         <i class="fas fa-bars text-lg"></i>
     </button>
 
-    <!-- Profile Dropdown Menu -->
-    <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50"></div>
-
-    <!-- Add/Edit Staff Modal -->
-    <div id="staffModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div class="p-6">
-                <h2 id="modalTitle" class="text-xl font-bold text-gray-900 mb-4">Add New Staff</h2>
-                <form id="staffForm" enctype="multipart/form-data" class="space-y-4">
-                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
-                    <input type="hidden" name="action" id="formAction" value="add">
-                    <input type="hidden" name="staff_id" id="editStaffId" value="">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                        <input type="text" name="name" id="formName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        <input type="email" name="email" id="formEmail" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                        <select name="role" id="formRole" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="Admin">Admin</option>
-                            <option value="Employee">Employee</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1" id="passwordLabel">Password</label>
-                        <input type="password" name="password" id="formPassword" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Profile Picture</label>
-                        <input type="file" name="profile_picture" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                    </div>
-                    <div class="flex justify-end space-x-3 pt-4">
-                        <button type="button" id="cancelBtn" class="px-4 py-2 text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>
-                        <button type="button" id="saveBtn" class="btn-primary px-4 py-2 rounded-lg flex items-center">
-                            <span id="saveText">Save</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+    <!-- Profile Dropdown -->
+    <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         const csrfToken = '<?php echo $csrf_token; ?>';
+        const currentSearch = '<?php echo htmlspecialchars($search); ?>';
+        const currentRole = '<?php echo json_encode($role_filter); ?>';
+        const currentStatus = '<?php echo json_encode($status_filter); ?>';
+        const currentPage = <?php echo $page; ?>;
 
         // Mobile menu toggle
         document.getElementById('mobileMenuToggle').addEventListener('click', function() {
-            document.querySelector('.sidebar').classList.toggle('-translate-x-full');
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('translate-x-0');
         });
 
-        // Profile Dropdown (exact same sa dashboard)
+        if (window.innerWidth < 768) {
+            document.querySelector('.sidebar').classList.add('-translate-x-full');
+        }
+
+        window.addEventListener('resize', function() {
+            const sidebar = document.querySelector('.sidebar');
+            if (window.innerWidth >= 768) {
+                sidebar.classList.remove('-translate-x-full');
+                sidebar.classList.add('translate-x-0');
+            } else {
+                sidebar.classList.remove('translate-x-0');
+                sidebar.classList.add('-translate-x-full');
+            }
+        });
+
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
         profileDropdown.addEventListener('click', function(e) {
             e.stopPropagation();
             if (profileDropdownMenu.classList.contains('hidden')) {
-                profileDropdownMenu.innerHTML = `
-                    <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                        </svg>
-                        My Profile
-                    </a>
-                    <div class="border-t border-gray-100 my-1"></div>
-                    <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
-                        </svg>
-                        Sign Out
-                    </a>
-                `;
-                profileDropdownMenu.classList.remove('hidden');
-                const rect = profileDropdown.getBoundingClientRect();
-                profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
-                profileDropdownMenu.style.right = `${window.innerWidth - rect.right + 8}px`;
+                showProfileDropdown();
             } else {
-                profileDropdownMenu.classList.add('hidden');
+                hideProfileDropdown();
             }
         });
 
-        document.addEventListener('click', function(e) {
-            if (!profileDropdown.contains(e.target)) {
-                profileDropdownMenu.classList.add('hidden');
-            }
-        });
-
-        window.addEventListener('scroll', () => profileDropdownMenu.classList.add('hidden'));
-
-        // Open Add Modal
-        function openAddModal() {
-            document.getElementById('modalTitle').textContent = 'Add New Staff';
-            document.getElementById('formAction').value = 'add';
-            document.getElementById('editStaffId').value = '';
-            document.getElementById('formPassword').required = true;
-            document.getElementById('passwordLabel').textContent = 'Password';
-            document.getElementById('staffForm').reset();
-            document.getElementById('staffModal').classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-        }
-
-        // Edit Staff
-        function editStaff(id) {
-            const formData = new FormData();
-            formData.append('action', 'get_staff');
-            formData.append('staff_id', id);
-            formData.append('csrf_token', csrfToken);
-            fetch('manage_staff.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('modalTitle').textContent = 'Edit Staff';
-                    document.getElementById('formAction').value = 'edit';
-                    document.getElementById('editStaffId').value = data.staff.staff_id;
-                    document.getElementById('formName').value = data.staff.name;
-                    document.getElementById('formEmail').value = data.staff.email;
-                    document.getElementById('formRole').value = data.staff.role;
-                    document.getElementById('formPassword').required = false;
-                    document.getElementById('passwordLabel').textContent = 'Password (Leave blank to keep current)';
-                    document.getElementById('staffModal').classList.remove('hidden');
-                    document.body.style.overflow = 'hidden';
-                } else {
-                    Swal.fire('Error!', data.msg || 'Failed to load staff data', 'error');
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                Swal.fire('Error!', 'Failed to load staff data', 'error');
-            });
-        }
-
-        // Delete Staff
-        function deleteStaff(id) {
-            Swal.fire({
-                title: 'Are you sure?',
-                text: "You won't be able to revert this!",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#3b82f6',
-                cancelButtonColor: '#d33',
-                confirmButtonText: 'Yes, delete it!'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    const formData = new FormData();
-                    formData.append('action', 'delete');
-                    formData.append('staff_id', id);
-                    formData.append('csrf_token', csrfToken);
-                    fetch('manage_staff.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.success) {
-                            Swal.fire('Deleted!', data.msg, 'success').then(() => {
-                                removeStaffRow(id);
-                            });
-                        } else {
-                            Swal.fire('Error!', data.msg || 'Failed to delete staff', 'error');
-                        }
-                    })
-                    .catch(err => {
-                        console.error(err);
-                        Swal.fire('Error!', 'Failed to delete staff', 'error');
-                    });
-                }
-            });
-        }
-
-        // Close Modals
-        document.getElementById('cancelBtn').onclick = () => {
-            document.getElementById('staffModal').classList.add('hidden');
-            document.body.style.overflow = 'auto';
-        };
-
-        // Close on backdrop
-        document.getElementById('staffModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.classList.add('hidden');
-                document.body.style.overflow = 'auto';
-            }
-        });
-
-        // Submit Form - INSTANT UPDATE
-        document.getElementById('saveBtn').addEventListener('click', submitForm);
-
-        function submitForm() {
-            const form = document.getElementById('staffForm');
-            const formData = new FormData(form);
-            const saveBtn = document.getElementById('saveBtn');
-            const saveText = document.getElementById('saveText');
-            const action = document.getElementById('formAction').value;
-            const staffId = document.getElementById('editStaffId').value;
-
-            saveBtn.classList.add('btn-loading');
-            saveText.textContent = 'Saving...';
-
-            fetch('manage_staff.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    Swal.fire('Success!', data.msg, 'success').then(() => {
-                        if (action === 'add') {
-                            const newStaff = {
-                                staff_id: data.staff_id,
-                                name: formData.get('name'),
-                                email: formData.get('email'),
-                                role: formData.get('role'),
-                                created_at: new Date().toISOString().split('T')[0],
-                                profile_picture: data.profile_picture
-                            };
-                            addStaffRow(newStaff);
-                        } else if (action === 'edit') {
-                            updateStaffRow(staffId, {
-                                name: formData.get('name'),
-                                email: formData.get('email'),
-                                role: formData.get('role'),
-                                profile_picture: data.profile_picture
-                            });
-                        }
-
-                        document.getElementById('staffModal').classList.add('hidden');
-                        document.body.style.overflow = 'auto';
-                        form.reset();
-                    });
-                } else {
-                    Swal.fire('Error!', data.msg || 'Operation failed.', 'error');
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                Swal.fire('Error!', 'Network error. Please try again.', 'error');
-            })
-            .finally(() => {
-                saveBtn.classList.remove('btn-loading');
-                saveText.textContent = 'Save';
-            });
-        }
-
-        // Add new staff row
-        function addStaffRow(staff) {
-            const tbody = document.getElementById('staffTableBody');
-            const avatar = staff.profile_picture 
-                ? `../${staff.profile_picture}` 
-                : `https://ui-avatars.com/api/?background=3b82f6&color=fff&name=${encodeURIComponent(staff.name)}`;
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-gray-50';
-            row.innerHTML = `
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <img src="${avatar}" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(staff.name)}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(staff.email)}</td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
-                        ${escapeHtml(staff.role)}
-                    </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                        Offline
-                    </span>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    ${formatDate(staff.created_at)}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button onclick="editStaff(${staff.staff_id})" class="text-blue-600 hover:text-blue-900 mr-3">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button onclick="deleteStaff(${staff.staff_id})" class="text-red-600 hover:text-red-900">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
+        function showProfileDropdown() {
+            profileDropdownMenu.innerHTML = `
+                <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    </svg>
+                    My Profile
+                </a>
+                <div class="border-t border-gray-100 my-1"></div>
+                <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                    </svg>
+                    Sign Out
+                </a>
             `;
-            tbody.insertBefore(row, tbody.firstChild);
+            profileDropdownMenu.classList.remove('hidden');
+            const rect = profileDropdown.getBoundingClientRect();
+            profileDropdownMenu.style.right = '1.5rem';
+            profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
         }
 
-        // Update existing row
-        function updateStaffRow(id, updates) {
-            const row = document.querySelector(`tr td button[onclick="editStaff(${id})"]`)?.closest('tr');
-            if (!row) return;
-
-            const cells = row.cells;
-            cells[0].querySelector('img').src = updates.profile_picture 
-                ? `../${updates.profile_picture}` 
-                : `https://ui-avatars.com/api/?background=3b82f6&color=fff&name=${encodeURIComponent(updates.name)}`;
-            cells[1].textContent = escapeHtml(updates.name);
-            cells[2].textContent = escapeHtml(updates.email);
-            cells[3].querySelector('span').textContent = escapeHtml(updates.role);
+        function hideProfileDropdown() {
+            profileDropdownMenu.classList.add('hidden');
         }
 
-        // Remove staff row
-        function removeStaffRow(id) {
-            const row = document.querySelector(`tr td button[onclick="editStaff(${id})"]`)?.closest('tr');
-            if (row) row.remove();
+        document.addEventListener('click', hideProfileDropdown);
+
+        const form = document.getElementById('searchForm');
+        const clearSearch = document.getElementById('clearSearch');
+        if (clearSearch) {
+            clearSearch.addEventListener('click', () => {
+                form.querySelector('input[name="search"]').value = '';
+                form.querySelector('select[name="role"]').value = 'all';
+                form.querySelector('select[name="status"]').value = 'all';
+                form.submit();
+            });
         }
 
-        // Escape HTML
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                form.submit();
+            }
+        });
+
+        document.getElementById('roleFilter').addEventListener('change', () => form.submit());
+        document.getElementById('statusFilter').addEventListener('change', () => form.submit());
+
+        // Helper functions
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // Format date
-        function formatDate(dateStr) {
-            const date = new Date(dateStr);
-            const month = date.toLocaleString('default', { month: 'short' });
-            return `${month} ${date.getDate()}, ${date.getFullYear()}`;
+        function getAvatarSrc(profile_picture, name) {
+            if (profile_picture) {
+                return '../' + profile_picture.replace(/^\.\.\/*/, '');
+            }
+            return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' + encodeURIComponent(name);
         }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function formatDateTime(dateStr) {
+            if (!dateStr) return 'Never';
+            return new Date(dateStr).toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true 
+            });
+        }
+
+        // View functionality (extracted to function for reuse)
+        async function loadStaffDetails(id) {
+            const formData = new FormData();
+            formData.append('action', 'get_staff');
+            formData.append('staff_id', id);
+            formData.append('csrf_token', csrfToken);
+            try {
+                const res = await fetch('', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    const staff = data.staff;
+                    const avatarSrc = getAvatarSrc(staff.profile_picture, staff.name);
+                    const status = staff.status;
+                    const statusClass = status === 'Online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                    const statusIcon = status === 'Online' ? 'text-green-500' : 'text-red-500';
+                    const detailsHtml = `
+                        <div class="space-y-6">
+                            <!-- Staff Header -->
+                            <div class="flex items-start space-x-4 p-4 bg-blue-50 rounded-xl">
+                                <img src="${avatarSrc}" alt="${escapeHtml(staff.name)}'s avatar" class="w-20 h-20 rounded-full object-cover flex-shrink-0 shadow-md">
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-2xl font-bold text-gray-900 truncate">${escapeHtml(staff.name)}</h4>
+                                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusClass}">
+                                        <i class="fas fa-circle mr-1 ${statusIcon}"></i>
+                                        ${status}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Details Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                    <i class="fas fa-envelope text-blue-500 w-5 flex-shrink-0"></i>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</p>
+                                        <p class="text-sm text-gray-900 truncate" title="${escapeHtml(staff.email)}">${escapeHtml(staff.email)}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                    <i class="fas fa-user-tag text-purple-500 w-5 flex-shrink-0"></i>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Role</p>
+                                        <p class="text-sm text-gray-900">${escapeHtml(staff.role)}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                    <i class="fas fa-calendar-check text-purple-500 w-5 flex-shrink-0"></i>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Account Created</p>
+                                        <p class="text-sm text-gray-900">${formatDate(staff.created_at)}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                    <i class="fas fa-clock text-orange-500 w-5 flex-shrink-0"></i>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Active</p>
+                                        <p class="text-sm text-gray-900">${formatDateTime(staff.last_login)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('staffDetails').innerHTML = detailsHtml;
+                    document.getElementById('viewModal').classList.remove('hidden');
+                } else {
+                    Swal.fire('Error!', data.message, 'error');
+                }
+            } catch (err) {
+                Swal.fire('Error!', 'Failed to load staff data', 'error');
+            }
+        }
+
+        // Initial event listeners for view buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.view-btn')) {
+                const btn = e.target.closest('.view-btn');
+                const id = btn.dataset.id;
+                loadStaffDetails(id);
+            }
+        });
+
+        // Close view modal
+        document.getElementById('closeView').addEventListener('click', () => {
+            document.getElementById('viewModal').classList.add('hidden');
+        });
+
+        document.getElementById('closeViewIcon').addEventListener('click', () => {
+            document.getElementById('viewModal').classList.add('hidden');
+        });
+
+        // Close modal on outside click
+        document.getElementById('viewModal').addEventListener('click', (e) => {
+            if (e.target.id === 'viewModal') {
+                document.getElementById('viewModal').classList.add('hidden');
+            }
+        });
+
+        // Heartbeat to update own activity every 30 seconds
+        setInterval(() => {
+            fetch('manage_staff.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `action=update_activity&csrf_token=${csrfToken}`
+            }).catch(console.error);
+        }, 30000);
+
+        // Refresh staff list and statuses every 60 seconds
+        setInterval(() => {
+            const formData = new FormData();
+            formData.append('action', 'get_all_staff');
+            formData.append('search', currentSearch);
+            formData.append('role', currentRole);
+            formData.append('status', currentStatus);
+            formData.append('page', currentPage.toString());
+            formData.append('csrf_token', csrfToken);
+            fetch('', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const tbody = document.getElementById('staffTableBody');
+                    if (data.staff.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-4 text-center text-gray-500">No staff members found.</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.staff.map(s => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-3 py-4 whitespace-nowrap">
+                                <img src="${getAvatarSrc(s.profile_picture, s.name)}" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
+                            </td>
+                            <td class="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(s.name)}</td>
+                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(s.email)}</td>
+                            <td class="px-3 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                                    ${escapeHtml(s.role)}
+                                </span>
+                            </td>
+                            <td class="px-3 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${s.status_class}">
+                                    ${s.is_online}
+                                </span>
+                            </td>
+                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${formatDate(s.created_at)}
+                            </td>
+                            <td class="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button class="view-btn text-blue-600 hover:text-blue-900 mr-3" data-id="${s.staff_id}" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            })
+            .catch(console.error);
+        }, 60000);
     </script>
 </body>
 </html>
