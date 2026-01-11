@@ -41,7 +41,7 @@ class EmailService {
     public function sendPasswordReset($to, $username, $resetToken) {
         try {
             // Generate reset link
-            $resetLink = "http://localhost:8000/reset_password.php?token=" . $resetToken;
+            $resetLink = "https://cwdaquasense.com/reset_password.php?token=" . $resetToken;
             
             $this->mail->clearAddresses();
             $this->mail->addAddress($to, $username);
@@ -69,7 +69,7 @@ class EmailService {
             
             $this->mail->Subject = 'Welcome to CWD AquaSense - Your Account Has Been Created!';
             
-            $loginLink = "http://localhost:8000/login.php";
+            $loginLink = "https://cwdaquasense.com/login.php";
             $emailTemplate = $this->getWelcomeTemplate($username, $loginLink);
             
             $this->mail->Body = $emailTemplate;
@@ -80,6 +80,28 @@ class EmailService {
             
         } catch (Exception $e) {
             error_log("Welcome email failed: " . $this->mail->ErrorInfo);
+            return false;
+        }
+    }
+
+    public function sendStaffWelcome($email, $name, $temp_password) {
+        try {
+            $this->mail->clearAddresses();
+            $this->mail->addAddress($email, $name);
+            
+            $this->mail->Subject = 'Welcome to CWD AquaSense Staff Portal - Account Created';
+            
+            $loginLink = "https://cwdaquasense.com/admin_login.php";
+            $emailTemplate = $this->getStaffWelcomeTemplate($email, $name, $temp_password, $loginLink);
+            
+            $this->mail->Body = $emailTemplate;
+            $this->mail->AltBody = "Welcome to CWD AquaSense Staff Portal!\n\nHello $name,\n\nYour staff account has been created by the SuperAdmin.\n\nEmail: $email\nTemporary Password: $temp_password\n\nPlease log in here: $loginLink\n\nChange your password upon first login.\n\nIf you have any questions, please contact our support team at support@calambawd.gov.ph.\n\nBest regards,\nCWD AquaSense Team";
+            
+            $this->mail->send();
+            return true;
+            
+        } catch (Exception $e) {
+            error_log("Staff welcome email failed: " . $this->mail->ErrorInfo);
             return false;
         }
     }
@@ -234,6 +256,99 @@ HTML;
             </div>
             <div style="text-align: center; margin: 24px 0;">
                 <a href="$loginLink" class="button">Sign In Now</a>
+            </div>
+            <p>If you have any questions or need assistance, please contact our support team at <a href="mailto:support@calambawd.gov.ph">support@calambawd.gov.ph</a>.</p>
+        </div>
+        <div class="footer">
+            <p><strong>Need Assistance?</strong> Reach out to Calamba Water District Support<br>
+                <a href="mailto:calambawaterdistrict@yahoo.com">calambawaterdistrict@yahoo.com</a> | (049) 545-2863
+            </p>
+            <p>© 2025 Calamba Water District. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+    }
+
+    private function getStaffWelcomeTemplate($email, $name, $temp_password, $loginLink) {
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to Staff Portal - CWD AquaSense</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.5; color: #1F2937; background-color: #F3F4F6; }
+        .container { max-width: 600px; margin: 20px auto; background: #FFFFFF; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: #1E40AF; color: #FFFFFF; padding: 24px; text-align: center; }
+        .header img { max-width: 48px; height: auto; margin-bottom: 12px; }
+        .header h1 { font-size: 24px; font-weight: 600; margin: 0; }
+        .content { padding: 32px; }
+        .content h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; }
+        .content p { margin-bottom: 16px; font-size: 16px; color: #4B5563; }
+        .button {
+            display: inline-block;
+            padding: 14px 28px;
+            background: #10B981;
+            color: #FFFFFF !important;
+            text-decoration: none !important;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 16px;
+            letter-spacing: 0.3px;
+            line-height: 1;
+            box-shadow: 0 6px 14px rgba(16, 185, 129, 0.25);
+            border: 0;
+        }
+        .button:hover { background: #059669; }
+        .highlight {
+            background: #F0FDF4;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            border-left: 5px solid #10B981;
+            color: #065F46;
+        }
+        .credentials { background: #F0FDF4; padding: 16px; border-radius: 8px; margin: 16px 0; border-left: 5px solid #10B981; }
+        .credentials ul { list-style: none; padding: 0; }
+        .credentials li { margin-bottom: 8px; }
+        .credentials code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #374151; font-family: monospace; }
+        .footer { background: #F9FAFB; padding: 24px; text-align: center; font-size: 14px; color: #6B7280; }
+        .footer a { color: #1E40AF; text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        @media (max-width: 600px) {
+            .container { margin: 10px; }
+            .content { padding: 20px; }
+            .header { padding: 20px; }
+            .header h1 { font-size: 20px; }
+            .button { padding: 10px 20px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://scontent.fmnl30-2.fna.fbcdn.net/v/t39.30808-6/558176218_1569224014514651_1613141673135955719_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=127cfc&_nc_eui2=AeEwXwZ3wT3zsxY0OFgxTkT9D1SPqxuJhVAPVI-rG4mFUKP0RkOPF4f1npcofVT6e7mp6LB88Le_HOJW6j8oEn-w&_nc_ohc=wNZ1whyV8VcQ7kNvwEhkpU9&_nc_oc=AdkC920K3XgJor2ljRHplmSZIwIN0Hiy0aJn1OqEfktz-QQDTAGhL7KdtF93Al2jQ7w&_nc_zt=23&_nc_ht=scontent.fmnl30-2.fna&_nc_gid=mtMoLIMPvbWCiMcIfBYykQ&oh=00_Affd5DFg3d_9BC0mEbQOjqI1gcyZFmEn5JJIp9dP6jtnlw&oe=68EC261D" alt="CWD AquaSense Logo">
+            <h1>Welcome to Staff Portal!</h1>
+        </div>
+        <div class="content">
+            <h2>Hello $name,</h2>
+            <p>Your staff account has been created by the SuperAdmin for the Calamba Water District AquaSense Management System.</p>
+            <div class="highlight">
+                <p><strong>Your account is ready!</strong> Use the credentials below to log in to the staff portal.</p>
+            </div>
+            <div class="credentials">
+                <ul>
+                    <li><strong>Email:</strong> $email</li>
+                    <li><strong>Temporary Password:</strong> <code>$temp_password</code></li>
+                </ul>
+                <p style="margin-top: 12px; font-style: italic; color: #065F46;"><em>Please change your password after your first login for security.</em></p>
+            </div>
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="$loginLink" class="button">Log In Now</a>
             </div>
             <p>If you have any questions or need assistance, please contact our support team at <a href="mailto:support@calambawd.gov.ph">support@calambawd.gov.ph</a>.</p>
         </div>

@@ -50,9 +50,26 @@ function formatPhoneDisplay($e164) {
 $alerts = [];
 
 // ---------------------------
+// Fetch staff info
+// ---------------------------
+$staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
+$stmt = mysqli_prepare($conn, $staff_query);
+mysqli_stmt_bind_param($stmt, "i", $staff_id);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$staff = mysqli_fetch_assoc($result);
+if (!$staff) {
+    session_unset();
+    session_destroy();
+    header("Location: login.php?message=Account not found.");
+    exit();
+}
+mysqli_stmt_close($stmt);
+
+// ---------------------------
 // Handle AJAX requests first
 // ---------------------------
-// Get user data for edit
+// Get user data for view
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_user') {
     if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
         header('Content-Type: application/json');
@@ -65,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         echo json_encode(['success' => false, 'message' => 'Invalid user ID.']);
         exit;
     }
-    $query = "SELECT id, username, first_name, middle_name, last_name, email, contact_number, profile_picture FROM users WHERE id = ?";
+    $query = "SELECT id, username, first_name, middle_name, last_name, email, contact_number, profile_picture, created_at, last_login FROM users WHERE id = ?";
     $stmt = mysqli_prepare($conn, $query);
     mysqli_stmt_bind_param($stmt, "i", $user_id);
     mysqli_stmt_execute($stmt);
@@ -80,95 +97,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     header('Content-Type: application/json');
     echo json_encode(['success' => true, 'user' => $user]);
     exit;
-}
-
-// Update user
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_user') {
-    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
-        if (isset($_POST['is_ajax'])) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
-            exit;
-        } else {
-            $alerts[] = ['type' => 'error', 'msg' => 'Invalid CSRF token.'];
-        }
-    } else {
-        $user_id = (int)($_POST['user_id'] ?? 0);
-        if ($user_id <= 0) {
-            if (isset($_POST['is_ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Invalid user ID.']);
-                exit;
-            } else {
-                $alerts[] = ['type' => 'error', 'msg' => 'Invalid user ID.'];
-            }
-        } else {
-            $username = sanitize($_POST['username'] ?? '');
-            $first_name = sanitize($_POST['first_name'] ?? '');
-            $middle_name = sanitize($_POST['middle_name'] ?? '');
-            $last_name = sanitize($_POST['last_name'] ?? '');
-            $email = sanitize($_POST['email'] ?? '');
-            $contact_number = sanitize($_POST['contact_number'] ?? '');
-            $picture_path = null;
-            if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === UPLOAD_ERR_OK) {
-                $upload_dir = '../uploads/';
-                if (!file_exists($upload_dir)) {
-                    mkdir($upload_dir, 0777, true);
-                }
-                $file_name = uniqid() . '_' . basename($_FILES['profile_picture']['name']);
-                $target_path = $upload_dir . $file_name;
-                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $target_path)) {
-                    $picture_path = 'uploads/' . $file_name;
-                    // Delete old picture
-                    $old_query = "SELECT profile_picture FROM users WHERE id = ?";
-                    $stmt_old = mysqli_prepare($conn, $old_query);
-                    mysqli_stmt_bind_param($stmt_old, "i", $user_id);
-                    mysqli_stmt_execute($stmt_old);
-                    $old_res = mysqli_stmt_get_result($stmt_old);
-                    $old_user = mysqli_fetch_assoc($old_res);
-                    mysqli_stmt_close($stmt_old);
-                    if ($old_user && $old_user['profile_picture'] && file_exists('../' . $old_user['profile_picture'])) {
-                        unlink('../' . $old_user['profile_picture']);
-                    }
-                } else {
-                    if (isset($_POST['is_ajax'])) {
-                        header('Content-Type: application/json');
-                        echo json_encode(['success' => false, 'message' => 'Failed to upload image.']);
-                        exit;
-                    } else {
-                        $alerts[] = ['type' => 'error', 'msg' => 'Failed to upload image.'];
-                    }
-                }
-            }
-            if ($picture_path) {
-                $update_query = "UPDATE users SET username = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, contact_number = ?, profile_picture = ? WHERE id = ?";
-                $stmt = mysqli_prepare($conn, $update_query);
-                mysqli_stmt_bind_param($stmt, "sssssssi", $username, $first_name, $middle_name, $last_name, $email, $contact_number, $picture_path, $user_id);
-            } else {
-                $update_query = "UPDATE users SET username = ?, first_name = ?, middle_name = ?, last_name = ?, email = ?, contact_number = ? WHERE id = ?";
-                $stmt = mysqli_prepare($conn, $update_query);
-                mysqli_stmt_bind_param($stmt, "ssssssi", $username, $first_name, $middle_name, $last_name, $email, $contact_number, $user_id);
-            }
-            if (mysqli_stmt_execute($stmt)) {
-                if (isset($_POST['is_ajax'])) {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => true, 'message' => 'User updated successfully.']);
-                    exit;
-                } else {
-                    $alerts[] = ['type' => 'success', 'msg' => 'User updated successfully.'];
-                }
-            } else {
-                if (isset($_POST['is_ajax'])) {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => false, 'message' => 'Failed to update user.']);
-                    exit;
-                } else {
-                    $alerts[] = ['type' => 'error', 'msg' => 'Failed to update user.'];
-                }
-            }
-            mysqli_stmt_close($stmt);
-        }
-    }
 }
 
 // ---------------------------
@@ -205,23 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $alerts[] = ['type' => $success ? 'success' : 'error', 'msg' => $msg];
     }
 }
-
-// ---------------------------
-// Fetch staff info
-// ---------------------------
-$staff_query = "SELECT staff_id, name, profile_picture, email, role, created_at FROM staff WHERE staff_id = ?";
-$stmt = mysqli_prepare($conn, $staff_query);
-mysqli_stmt_bind_param($stmt, "i", $staff_id);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
-$staff = mysqli_fetch_assoc($result);
-if (!$staff) {
-    session_unset();
-    session_destroy();
-    header("Location: login.php?message=Account not found.");
-    exit();
-}
-mysqli_stmt_close($stmt);
 
 // ---------------------------
 // Fetch users with pagination and search
@@ -429,9 +340,6 @@ mysqli_stmt_close($stmt);
                                     </button>
                                 <?php endif; ?>
                             </form>
-                            <a href="add_user.php" class="btn-primary flex items-center px-4 py-2 rounded-lg text-sm font-medium">
-                                <i class="fas fa-plus mr-2"></i>Add New User
-                            </a>
                         </div>
                     </div>
 
@@ -481,10 +389,10 @@ mysqli_stmt_close($stmt);
                                                 <?php echo date('M j, Y', strtotime($user['created_at'])); ?>
                                             </td>
                                             <td class="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <button class="edit-btn text-blue-600 hover:text-blue-900 mr-3" data-id="<?php echo $user['id']; ?>">
-                                                    <i class="fas fa-edit"></i>
+                                                <button class="view-btn text-blue-600 hover:text-blue-900 mr-3" data-id="<?php echo $user['id']; ?>" title="View Details">
+                                                    <i class="fas fa-eye"></i>
                                                 </button>
-                                                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?php echo $user['id']; ?>">
+                                                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?php echo $user['id']; ?>" title="Delete User">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
                                             </td>
@@ -519,48 +427,23 @@ mysqli_stmt_close($stmt);
         </div>
     </div>
 
-    <!-- Edit Modal -->
-    <div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-lg p-6 w-full max-w-md max-h-full overflow-y-auto">
-            <h3 class="text-lg font-semibold mb-4">Edit User</h3>
-            <form id="editForm" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="update_user">
-                <input type="hidden" name="user_id" id="edit_user_id">
-                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                    <input type="text" name="username" id="edit_username" class="w-full p-2 border border-gray-300 rounded" required>
+    <!-- View Modal -->
+    <div id="viewModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold text-gray-900">User Details</h3>
+                    <button type="button" id="closeViewIcon" class="text-gray-400 hover:text-gray-600 transition-colors">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
                 </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">First Name</label>
-                    <input type="text" name="first_name" id="edit_first_name" class="w-full p-2 border border-gray-300 rounded">
+                <div id="userDetails">
+                    <!-- Content will be populated here -->
                 </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Middle Name</label>
-                    <input type="text" name="middle_name" id="edit_middle_name" class="w-full p-2 border border-gray-300 rounded">
+                <div class="flex justify-end mt-8 pt-4 border-t border-gray-200">
+                    <button type="button" id="closeView" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">Close</button>
                 </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
-                    <input type="text" name="last_name" id="edit_last_name" class="w-full p-2 border border-gray-300 rounded">
-                </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                    <input type="email" name="email" id="edit_email" class="w-full p-2 border border-gray-300 rounded" required>
-                </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Contact Number (E.164)</label>
-                    <input type="tel" name="contact_number" id="edit_contact_number" class="w-full p-2 border border-gray-300 rounded">
-                </div>
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
-                    <input type="file" name="profile_picture" id="edit_profile_picture" class="w-full p-2 border border-gray-300 rounded" accept="image/*">
-                    <div id="current_picture" class="mt-2"></div>
-                </div>
-                <div class="flex justify-end space-x-2">
-                    <button type="button" id="cancelEdit" class="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Update</button>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 
@@ -650,8 +533,42 @@ mysqli_stmt_close($stmt);
             }
         });
 
-        // Edit functionality
-        document.querySelectorAll('.edit-btn').forEach(btn => {
+        // Helper functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function getAvatarSrc(profile_picture, name) {
+            if (profile_picture) {
+                return '../' + profile_picture.replace(/^\.\.\/*/, '');
+            }
+            return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' + encodeURIComponent(name);
+        }
+
+        function formatPhoneDisplay(e164) {
+            if (!e164) return '—';
+            return e164.replace(/^\+63(\d{3})(\d{3})(\d{4})$/, '+63 $1 $2 $3');
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function formatDateTime(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: true 
+            });
+        }
+
+        // View functionality
+        document.querySelectorAll('.view-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const id = btn.dataset.id;
@@ -664,19 +581,64 @@ mysqli_stmt_close($stmt);
                     const data = await res.json();
                     if (data.success) {
                         const user = data.user;
-                        document.getElementById('edit_user_id').value = user.id;
-                        document.getElementById('edit_username').value = user.username;
-                        document.getElementById('edit_first_name').value = user.first_name || '';
-                        document.getElementById('edit_middle_name').value = user.middle_name || '';
-                        document.getElementById('edit_last_name').value = user.last_name || '';
-                        document.getElementById('edit_email').value = user.email;
-                        document.getElementById('edit_contact_number').value = user.contact_number;
-                        if (user.profile_picture) {
-                            document.getElementById('current_picture').innerHTML = `<img src="../${user.profile_picture}" alt="Current" class="w-20 h-20 rounded-full object-cover"> <p class="text-sm text-gray-500">Current profile picture</p>`;
-                        } else {
-                            document.getElementById('current_picture').innerHTML = '';
-                        }
-                        document.getElementById('editModal').classList.remove('hidden');
+                        const fullName = [user.first_name, user.middle_name, user.last_name].filter(Boolean).join(' ');
+                        const avatarSrc = getAvatarSrc(user.profile_picture, fullName || user.username);
+                        const detailsHtml = `
+                            <div class="space-y-6">
+                                <!-- User Header -->
+                                <div class="flex items-start space-x-4 p-4 bg-blue-50 rounded-xl">
+                                    <img src="${avatarSrc}" alt="${escapeHtml(fullName || user.username)}'s avatar" class="w-20 h-20 rounded-full object-cover flex-shrink-0 shadow-md">
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="text-2xl font-bold text-gray-900 truncate">${escapeHtml(fullName || '—')}</h4>
+                                        <p class="text-sm text-blue-600 font-medium">@${escapeHtml(user.username)}</p>
+                                    </div>
+                                </div>
+
+                                <!-- Details Grid -->
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                        <i class="fas fa-envelope text-blue-500 w-5 flex-shrink-0"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Email</p>
+                                            <p class="text-sm text-gray-900 truncate" title="${escapeHtml(user.email)}">${escapeHtml(user.email)}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                        <i class="fas fa-phone text-green-500 w-5 flex-shrink-0"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Contact Number</p>
+                                            <p class="text-sm text-gray-900">${formatPhoneDisplay(user.contact_number)}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                        <i class="fas fa-calendar-check text-purple-500 w-5 flex-shrink-0"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Registered</p>
+                                            <p class="text-sm text-gray-900">${formatDate(user.created_at)}</p>
+                                        </div>
+                                    </div>
+                                    ${user.last_login ? `
+                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                        <i class="fas fa-clock text-orange-500 w-5 flex-shrink-0"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Login</p>
+                                            <p class="text-sm text-gray-900">${formatDateTime(user.last_login)}</p>
+                                        </div>
+                                    </div>
+                                    ` : `
+                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                        <i class="fas fa-clock text-gray-400 w-5 flex-shrink-0"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Login</p>
+                                            <p class="text-sm text-gray-500 italic">Never</p>
+                                        </div>
+                                    </div>
+                                    `}
+                                </div>
+                            </div>
+                        `;
+                        document.getElementById('userDetails').innerHTML = detailsHtml;
+                        document.getElementById('viewModal').classList.remove('hidden');
                     } else {
                         Swal.fire('Error!', data.message, 'error');
                     }
@@ -686,36 +648,19 @@ mysqli_stmt_close($stmt);
             });
         });
 
-        // Edit form submit
-        document.getElementById('editForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            formData.append('is_ajax', '1');
-            try {
-                const res = await fetch('', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.success) {
-                    Swal.fire('Updated!', 'User has been updated.', 'success').then(() => {
-                        document.getElementById('editModal').classList.add('hidden');
-                        location.reload();
-                    });
-                } else {
-                    Swal.fire('Error!', data.message || 'Failed to update', 'error');
-                }
-            } catch (err) {
-                Swal.fire('Error!', 'Failed to update user', 'error');
-            }
+        // Close view modal
+        document.getElementById('closeView').addEventListener('click', () => {
+            document.getElementById('viewModal').classList.add('hidden');
         });
 
-        // Cancel edit
-        document.getElementById('cancelEdit').addEventListener('click', () => {
-            document.getElementById('editModal').classList.add('hidden');
+        document.getElementById('closeViewIcon').addEventListener('click', () => {
+            document.getElementById('viewModal').classList.add('hidden');
         });
 
         // Close modal on outside click
-        document.getElementById('editModal').addEventListener('click', (e) => {
-            if (e.target.id === 'editModal') {
-                document.getElementById('editModal').classList.add('hidden');
+        document.getElementById('viewModal').addEventListener('click', (e) => {
+            if (e.target.id === 'viewModal') {
+                document.getElementById('viewModal').classList.add('hidden');
             }
         });
 

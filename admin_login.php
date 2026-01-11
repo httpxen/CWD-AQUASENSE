@@ -1,6 +1,6 @@
 <?php
 include 'db/db.php';
-session_name('AdminSession'); // Separate session for admins
+session_name('AdminSession'); // Separate session for admins (shared with SuperAdmin for simplicity)
 session_start();
 
 require_once 'config/env.php';
@@ -14,7 +14,7 @@ $timeout_duration = 1800;
 if (isset($_SESSION['STAFF_LAST_ACTIVITY']) && (time() - $_SESSION['STAFF_LAST_ACTIVITY']) > $timeout_duration) {
     session_unset();
     session_destroy();
-    header("Location: admin_login.php?message=Session expired, please log in again.");
+    header("Location: superadmin_login.php?message=Session expired, please log in again.");
     exit();
 }
 $_SESSION['STAFF_LAST_ACTIVITY'] = time();
@@ -74,8 +74,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $_SESSION['staff_role'] = $row['role'];
                 $_SESSION['STAFF_LAST_ACTIVITY'] = time();
 
-                // Role-based redirect (e.g., Admin to full dashboard)
-                if ($row['role'] == 'Admin') {
+                // Role-based redirect (SuperAdmin to dedicated dashboard)
+                if ($row['role'] == 'SuperAdmin') {
+                    header("Location: superadmin/dashboard.php");
+                } elseif ($row['role'] == 'Admin') {
                     header("Location: admin/dashboard.php");
                 } elseif ($row['role'] == 'Employee') {
                     header("Location: employees/dashboard.php");
@@ -246,7 +248,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             Calamba Water District
           </h1>
           <p class="text-base font-semibold text-blue-600 sm:text-lg">
-            Admin Portal - AquaSense
+                Admin Portal - AquaSense
           </p>
         </div>
       </div>

@@ -1,7 +1,28 @@
 <?php
-// includes/complaints.php (Updated with Map Modal Integration and Per-Row Lat/Lng Fetch)
+date_default_timezone_set('Asia/Manila');
 
-// Assuming get_avatar_src function is available or include the helper
+// === FIXED: FORCE MYSQL TO USE MANILA TIME (+08:00) ===
+if (isset($conn)) {
+    mysqli_query($conn, "SET time_zone = '+08:00'");
+}
+
+function formatLocalDate($db_time, $format = 'M d, Y h:i A') {
+    if (empty($db_time)) {
+        return null;
+    }
+    try {
+        if ($db_time === 'now') {
+            $dt = new DateTime('now');
+        } else {
+            $dt = new DateTime($db_time);
+        }
+        return $dt->format($format);
+    } catch (Exception $e) {
+        return $db_time; // Fallback
+    }
+}
+
+// Helper for Avatar
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) {
         return '../' . $profile_picture;
@@ -9,12 +30,12 @@ function get_avatar_src($profile_picture, $name) {
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
 
-// Collect unique categories for filters (server-side prep)
+// Collect unique categories for filters
 $unique_categories = [];
-$unique_statuses = ['Pending', 'In Progress', 'Resolved', 'Closed']; // Hardcoded statuses, adjust if dynamic
+$unique_statuses = ['Pending', 'In Progress', 'Resolved', 'Closed'];
 
-if ($total_rows > 0) {
-    mysqli_data_seek($list_res, 0); // Reset result pointer
+if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
+    mysqli_data_seek($list_res, 0); // Reset pointer
     while ($row = mysqli_fetch_assoc($list_res)) {
         if (!in_array($row['category'], $unique_categories)) {
             $unique_categories[] = $row['category'];
@@ -23,11 +44,10 @@ if ($total_rows > 0) {
     mysqli_data_seek($list_res, 0); // Reset again for loop
 }
 ?>
+
 <div class="space-y-6">
-    <!-- Filters Header -->
     <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-4 sm:p-6">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <!-- Search Bar -->
             <div class="relative flex-1 max-w-md">
                 <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
@@ -35,9 +55,7 @@ if ($total_rows > 0) {
                 <input type="text" id="globalSearch" placeholder="Search complaints..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200">
             </div>
             
-            <!-- Filters -->
             <div class="flex flex-wrap gap-2 items-center">
-                <!-- Status Filter -->
                 <div class="relative">
                     <select id="statusFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                         <option value="">All Status</option>
@@ -52,7 +70,6 @@ if ($total_rows > 0) {
                     </div>
                 </div>
                 
-                <!-- Category Filter -->
                 <div class="relative">
                     <select id="categoryFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                         <option value="">All Categories</option>
@@ -67,7 +84,6 @@ if ($total_rows > 0) {
                     </div>
                 </div>
                 
-                <!-- Clear Filters -->
                 <button id="clearFilters" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200">Clear</button>
             </div>
         </div>
@@ -78,10 +94,9 @@ if ($total_rows > 0) {
             No complaints yet. Create your first one above.
         </div>
     <?php else: ?>
-        <!-- Results Container -->
         <div id="complaintsContainer" class="space-y-4">
             <?php 
-            mysqli_data_seek($list_res, 0); // Ensure pointer is at start for display loop
+            mysqli_data_seek($list_res, 0); // Ensure pointer is at start
             while ($row = mysqli_fetch_assoc($list_res)): 
                 // Fetch lat/lng for this complaint since not in main SELECT
                 $loc_sql = "SELECT location_lat, location_lng FROM complaints WHERE complaint_id = ?";
@@ -90,11 +105,11 @@ if ($total_rows > 0) {
                 mysqli_stmt_execute($stmt_loc);
                 $loc_res = mysqli_stmt_get_result($stmt_loc);
                 $loc = mysqli_fetch_assoc($loc_res);
-                $lat = $loc['location_lat'] ?? 14.2127; // Default to Calamba
-                $lng = $loc['location_lng'] ?? 121.1154;
+                $lat = $loc['location_lat'] ?? null;
+                $lng = $loc['location_lng'] ?? null;
                 mysqli_stmt_close($stmt_loc);
 
-                // Safe access to sentiment to avoid undefined key warnings
+                // Safe access to sentiment
                 $sentiment = $row['sentiment'] ?? '';
 
                 // Fetch assignments for history timeline
@@ -119,7 +134,7 @@ if ($total_rows > 0) {
                 // Fetch comments for history timeline
                 $comment_sql = "
                     SELECT cc.comment_id AS id, cc.created_at, cc.commenter_type, cc.commenter_id, cc.comment,
-                           CASE
+                           CASE 
                                WHEN cc.commenter_type = 'staff' THEN CONCAT(s.name, ' (Staff)')
                                WHEN cc.commenter_type = 'user' THEN CONCAT(u.first_name, ' ', u.last_name, ' (Customer)')
                            END AS commenter_name,
@@ -148,7 +163,7 @@ if ($total_rows > 0) {
                 if ($row['status'] === 'Resolved') $status_badge = 'bg-green-50 text-green-700 border border-green-200';
                 if ($row['status'] === 'Closed') $status_badge = 'bg-gray-100 text-gray-700 border border-gray-200';
 
-                // Sentiment badge (now using safe $sentiment)
+                // Sentiment badge
                 $sentiment_badge = 'bg-gray-50 text-gray-600 border border-gray-200';
                 if ($sentiment === 'Positive') $sentiment_badge = 'bg-green-50 text-green-700 border border-green-200';
                 if ($sentiment === 'Negative') $sentiment_badge = 'bg-red-50 text-red-700 border border-red-200';
@@ -166,7 +181,6 @@ if ($total_rows > 0) {
 
                 // Assigned display
                 $assigned_badge = 'bg-purple-50 text-purple-700 border border-purple-200 inline-block';
-                $assigned_text = !empty($row['staff_name']) ? $row['staff_name'] . ($row['staff_role'] ? ' (' . $row['staff_role'] . ')' : '') : 'Unassigned';
                 $assigned_display = '';
                 if (!empty($row['staff_name'])) {
                     $avatar_src = get_avatar_src($row['staff_profile_picture'], $row['staff_name']);
@@ -198,10 +212,12 @@ if ($total_rows > 0) {
                 $due_display = '';
                 if ($row['action_due']): 
                     $current_date = date('Y-m-d');
-                    $due_date = $row['action_due'];
-                    $days_until_due = (strtotime($due_date) - strtotime($current_date)) / (60 * 60 * 24);
+                    // Use formatLocalDate to ensure timezone is correct
+                    $due_local = formatLocalDate($row['action_due'], 'Y-m-d');
+                    $days_until_due = (strtotime($due_local) - strtotime($current_date)) / (60 * 60 * 24);
+                    
                     $due_class = 'bg-green-50 text-green-700 border border-green-200';
-                    if ($days_until_due <= 0) {
+                    if ($days_until_due < 0) {
                         $due_class = 'bg-red-50 text-red-700 border border-red-200 animate-pulse';
                     } elseif ($days_until_due <= 3) {
                         $due_class = 'bg-yellow-50 text-yellow-700 border border-yellow-200';
@@ -211,7 +227,7 @@ if ($total_rows > 0) {
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 mr-1 flex-shrink-0">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                         </svg>
-                        Due: ' . htmlspecialchars(date('M d, Y', strtotime($due_date))) . '
+                        Due: ' . htmlspecialchars(formatLocalDate($row['action_due'], 'M d, Y')) . '
                     </span>';
                 endif;
 
@@ -256,6 +272,7 @@ if ($total_rows > 0) {
                     ];
                     $previous_status = $assign['assignment_status'];
                 }
+
                 $last_assignment_status = end($assignments)['assignment_status'] ?? 'Pending';
                 $expected_sequence = ['Pending', 'Assigned', 'In Progress', 'Resolved', 'Closed'];
                 $current_index = array_search($last_assignment_status, $expected_sequence);
@@ -281,12 +298,11 @@ if ($total_rows > 0) {
                     }
                 }
 
-                // Add comments to history
                 foreach ($comments as $comment) {
                     $profile_picture = $comment['commenter_type'] === 'staff' ? get_avatar_src($comment['staff_profile_picture'], $comment['commenter_name']) : get_avatar_src($comment['user_profile_picture'], $comment['commenter_name']);
                     $status_history[] = [
                         'timestamp' => $comment['created_at'],
-                        'status' => $row['status'], // Use current status for color
+                        'status' => $row['status'], 
                         'event' => 'Comment Added',
                         'details' => [
                             'commenter_name' => $comment['commenter_name'],
@@ -301,9 +317,8 @@ if ($total_rows > 0) {
                 usort($status_history, function($a, $b) {
                     return strtotime($a['timestamp']) - strtotime($b['timestamp']);
                 });
-                ?>
+            ?>
                 <div class="complaint-card" data-status="<?php echo htmlspecialchars($row['status']); ?>" data-category="<?php echo htmlspecialchars($row['category']); ?>" data-description="<?php echo htmlspecialchars(strtolower($row['description'])); ?>">
-                    <!-- Complaint Header (Collapsible Toggle) -->
                     <button type="button" class="w-full p-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 focus:outline-none" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180');">
                         <div class="flex items-center space-x-3">
                             <h3 class="text-base font-semibold text-gray-900">Complaint #<?php echo (int)$row['complaint_id']; ?> - <?php echo htmlspecialchars($row['category']); ?></h3>
@@ -314,7 +329,6 @@ if ($total_rows > 0) {
                         </svg>
                     </button>
 
-                    <!-- Complaint Details (Collapsible Content) -->
                     <div class="hidden p-4 space-y-4">
                         <div class="complaint-header">
                             <div class="complaint-meta">
@@ -353,14 +367,16 @@ if ($total_rows > 0) {
                                 </svg>
                                 Location
                             </h4>
-                            <p class="text-sm text-gray-600 mb-3"><?php echo e($row['location_address']); ?></p>
-                            <button onclick="openMapModal(<?php echo (int)$row['complaint_id']; ?>, <?php echo (float)$lat; ?>, <?php echo (float)$lng; ?>, '<?php echo e($row['location_address']); ?>')" class="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm font-medium flex items-center transition-colors">
+                            <p class="text-sm text-gray-600 mb-3"><?php echo htmlspecialchars($row['location_address']); ?></p>
+                            <?php if($lat && $lng): ?>
+                            <button onclick="openMapModal(<?php echo (int)$row['complaint_id']; ?>, <?php echo (float)$lat; ?>, <?php echo (float)$lng; ?>, '<?php echo htmlspecialchars(addslashes($row['location_address'])); ?>')" class="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-sm font-medium flex items-center transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
                                 </svg>
                                 View on Map
                             </button>
+                            <?php endif; ?>
                         </div>
                         <?php endif; ?>
                         <div>
@@ -380,6 +396,7 @@ if ($total_rows > 0) {
                                         } elseif ($event['event'] === 'Status Changed') {
                                             $dot_class = $event['status'] === 'In Progress' ? 'bg-blue-100' : ($event['status'] === 'Resolved' ? 'bg-green-100' : 'bg-gray-100');
                                             $icon_class = $event['status'] === 'In Progress' ? 'text-blue-600' : ($event['status'] === 'Resolved' ? 'text-green-600' : 'text-gray-600');
+                                            $icon_path = 'M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12Z';
                                         } elseif ($event['event'] === 'Assigned to Staff') {
                                             $dot_class = 'bg-purple-100';
                                             $icon_class = 'text-purple-600';
@@ -396,7 +413,7 @@ if ($total_rows > 0) {
                                             </svg>
                                         </div>
                                         <div class="mt-3 bg-white p-3 rounded-lg shadow-sm border border-gray-100">
-                                            <p class="text-xs text-gray-400"><?php echo date('M d, Y h:i A', strtotime($event['timestamp'])); ?></p>
+                                            <p class="text-xs text-gray-400"><?php echo formatLocalDate($event['timestamp']); ?></p>
                                             <p class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($event['event']); ?></p>
                                             <?php if ($event['event'] === 'Assigned to Staff' && isset($event['details']['staff_name'])): ?>
                                                 <div class="flex items-center mt-1 space-x-2">
@@ -430,7 +447,6 @@ if ($total_rows > 0) {
         </div>
     <?php endif; ?>
 
-    <!-- Pagination -->
     <?php if ($total_pages > 1): ?>
         <div id="pagination" class="p-6 border-t border-gray-200 bg-gray-50 rounded-lg">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -448,7 +464,6 @@ if ($total_rows > 0) {
         </div>
     <?php endif; ?>
 
-    <!-- Map Modal -->
     <div id="mapModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4" onclick="closeMapModal()">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden relative" onclick="event.stopPropagation()">
             <div class="p-6 border-b border-gray-200 flex justify-between items-center">
@@ -587,20 +602,6 @@ if ($total_rows > 0) {
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(currentMap);
-
-            // Custom blue marker
-            const customIcon = L.icon({
-                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            });
-
-            L.marker([lat, lng], { icon: customIcon }).addTo(currentMap)
-                .bindPopup(`<b>Complaint #${complaintId}</b><br>${address}`)
-                .openPopup();
         } else {
             currentMap.setView([lat, lng], 16);
             // Remove existing markers
@@ -609,19 +610,26 @@ if ($total_rows > 0) {
                     currentMap.removeLayer(layer);
                 }
             });
-            // Add new marker
-            const customIcon = L.icon({
-                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            });
-            L.marker([lat, lng], { icon: customIcon }).addTo(currentMap)
-                .bindPopup(`<b>Complaint #${complaintId}</b><br>${address}`)
-                .openPopup();
         }
+        
+        // Custom blue marker
+        const customIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        L.marker([lat, lng], { icon: customIcon }).addTo(currentMap)
+            .bindPopup(`<b>Complaint #${complaintId}</b><br>${address}`)
+            .openPopup();
+        
+        // Force map resize check
+        setTimeout(() => {
+            currentMap.invalidateSize();
+        }, 100);
     }
 
     function closeMapModal() {

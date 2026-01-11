@@ -41,6 +41,7 @@ try {
     // === DYNAMIC GREETING ===
     $hour = (int)date('H');
     $greeting = $hour < 12 ? 'Magandang umaga' : ($hour < 18 ? 'Magandang hapon' : 'Magandang gabi');
+    $engGreeting = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
 
     // === FETCH ALL ORGANIZATIONAL DATA FROM DB (people, positions, assignments) ===
     $orgQuery = "SELECT pos.title AS position_title, pos.category, pos.department, pos.division, pos.order_index,
@@ -239,13 +240,290 @@ try {
     }
     $userLower = mb_strtolower($userMessage, 'UTF-8');
 
+    // === NEW: CITIZEN'S CHARTER QUERY ===
+    // Define patterns for each service (slug-based, flexible matching)
+    $charterPatterns = [
+        'estimate' => '/\b(estimate|halaga|application for estimate|filing of application for estimate|humiling ng estimate|proseso ng estimate)\b/iu',
+        'connection' => '/\b(payment of application for new water service connection)\b/iu',
+        'complaint' => '/\b(filing of complaint|reklamo|mag-file ng complaint|mag-report ng problema|filing of complaint or request)\b/iu',
+        'disconnection' => '/\b(disconnection|disconnect|request for disconnection|humiling ng pagputol|filing of request for disconnection)\b/iu',
+        'ledger' => '/\b(account ledger|ledger|request for account ledger|kopya ng ledger|filing of request for a copy of account ledger)\b/iu',
+        'payment' => '/\b(payment of water bill|bayad ng tubig|water bill|magbayad|payment of water bill)\b/iu',
+        'name-change' => '/\b(change of name|pagbabago ng pangalan|request for change of name|filing of request for change of name)\b/iu',
+        'bulk-sale' => '/\b(bulk sale|bulk water|payment of bulk sale|bumili ng bulk tubig)\b/iu',
+        'ground-water' => '/\b(ground water assessment|groundwater|payment of ground water assessment|bayad ng groundwater)\b/iu',
+        'new-water-connection' => '/\b(application for new water connection|aplay ng bagong water connection|new water connection application|new water connection|bagong koneksyon|aplay ng bagong tubig|new connection)\b/iu',
+        'reconnection' => '/\b(reconnection|reconnect|procedures of re-connection|humiling ng reconnection)\b/iu',
+        'water-analysis' => '/\b(water analysis|water test|analysis ng tubig|water analysis)\b/iu',
+        // NEW: Water Rates Pattern
+        'water-rates' => '/\b(water rates|presyo ng tubig|rate|tariff|singil|billing rate|water bill rates|presyo ng water|rate ng tubig|effective july 2010)\b/iu',
+        // NEW: Violations and Penalties Pattern
+        'violations-penalties' => '/\b(violations|penalties|multa|parusa|violation|penalty|tampering|illegal|offenses|reklamo sa paglabag|schedule of violations and penalties)\b/iu'
+    ];
+
+    $matchedService = null;
+    foreach ($charterPatterns as $slug => $pattern) {
+        if (preg_match($pattern, $userLower)) {
+            $matchedService = $slug;
+            break;
+        }
+    }
+
+    if ($matchedService) {
+        usleep(1500000 + rand(0, 1000000));
+
+        // Special handling for Water Rates (fetch fees from service_id=6 directly) - FIXED REGEX FOR METER EXTRACTION
+        if ($matchedService === 'water-rates') {
+            $serviceId = 6; // Payment of Water Bill service_id
+            $serviceTitle = $isEnglish ? 'Schedule of Water Rates (Effective July 2010)' : 'Mga Rate ng Tubig (Epektibo Hulyo 2010)';
+
+            // Fetch Fees only (rates)
+            $feeQuery = "SELECT fee_category, particular, amount FROM service_fees WHERE service_id = ? AND fee_category LIKE '%List of Formula%' ORDER BY fee_category, id";
+            $feeStmt = mysqli_prepare($conn, $feeQuery);
+            mysqli_stmt_bind_param($feeStmt, 'i', $serviceId);
+            mysqli_stmt_execute($feeStmt);
+            $feeResult = mysqli_stmt_get_result($feeStmt);
+            $fees = [];
+            while ($row = mysqli_fetch_assoc($feeResult)) {
+                $fees[] = $row;
+            }
+
+            // Build Rates Tables (separate for Category A and B)
+            $ratesHtml = "<h3 style=\"color:#1f2937; font-size:18px; margin-bottom:10px;\">$serviceTitle</h3>";
+            if (!empty($fees)) {
+                $ratesHtml .= "<p style=\"color:#6b7280; font-size:14px;\">Official Document - Calamba Water District. <a href=\"https://cwd.com.ph/water_rates.html\" target=\"_blank\" style=\"color:#2563eb;\">View Official Rates on CWD Website</a><br>Note: These are historical rates. Check CWD office for current updates.</p>";
+
+                // Group fees by category and meter size - FIXED REGEX
+                $groupedFees = ['Category A: Service Areas (Residential / Government)' => [], 'Category B: Service Areas (NHA, VLP, VPB, Major Homes)' => []];
+                foreach ($fees as $fee) {
+                    $cat = strpos($fee['fee_category'], 'NHA') !== false ? 'Category B: Service Areas (NHA, VLP, VPB, Major Homes)' : 'Category A: Service Areas (Residential / Government)';
+                    $particular = $fee['particular'];
+                    // FIXED: Better regex to handle '1 1/2"' and '1/2"'
+                    if (preg_match('/^((?:\d+\s+)?\d+(?:\/\d+)?")?\s*(.*)$/u', $particular, $matches)) {
+                        $meter = $matches[1] ?? '';
+                        $desc = trim($matches[2]);
+                        if ($meter) {  // Only if meter extracted
+                            $groupedFees[$cat][$meter][$desc] = $fee['amount'];
+                        }
+                    }
+                }
+
+                // Meters order - with space for 1 1/2"
+                $meters = ['1/2"', '3/4"', '1"', '1 1/2"', '2"'];
+
+                foreach ($groupedFees as $category => $metersData) {
+                    $ratesHtml .= "<div style=\"margin:20px 0;\"><h4 style=\"color:#1e40af; font-size:16px; margin-bottom:5px;\">$category</h4>";
+                    $ratesHtml .= "<table style=\"width:100%; border-collapse:collapse; margin:10px 0; font-size:14px;\">";
+                    $ratesHtml .= "<tr style=\"background:#f3f4f6;\"><th style=\"border:1px solid #d1d5db; padding:8px;\">Meter Size</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Min Charge (1-10 cu.m.)</th><th style=\"border:1px solid #d1d5db; padding:8px;\">11-20 cu.m. (per cu.m.)</th><th style=\"border:1px solid #d1d5db; padding:8px;\">21-30 cu.m. (per cu.m.)</th><th style=\"border:1px solid #d1d5db; padding:8px;\">31-40 cu.m. (per cu.m.)</th><th style=\"border:1px solid #d1d5db; padding:8px;\">41+ cu.m. (per cu.m.)</th></tr>";
+
+                    foreach ($meters as $meter) {
+                        if (isset($metersData[$meter])) {
+                            $row = "<tr><td style=\"border:1px solid #d1d5db; padding:8px; font-weight:bold;\">" . htmlspecialchars($meter) . "</td>";
+                            $row .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($metersData[$meter]['Minimum Charge (1-10 m³)'] ?? 0, 2) . "</td>";
+                            $row .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($metersData[$meter]['11-20 m³ (per m³)'] ?? 0, 2) . "</td>";
+                            $row .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($metersData[$meter]['21-30 m³ (per m³)'] ?? 0, 2) . "</td>";
+                            $row .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($metersData[$meter]['31-40 m³ (per m³)'] ?? 0, 2) . "</td>";
+                            $row .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($metersData[$meter]['41+ m³ (per m³)'] ?? 0, 2) . "</td></tr>";
+                            $ratesHtml .= $row;
+                        }
+                    }
+                    $ratesHtml .= "</table><p style=\"text-align:right; font-size:12px; color:#9ca3af;\">* All figures in Philippine Peso (PHP)</p></div>";
+                }
+            } else {
+                $ratesHtml .= "<p>No rates data available right now. Please visit the CWD office for the latest.</p>";
+            }
+
+            // Disclaimer
+            $disclaimer = "<div style=\"background:#fffbeb; border-left:4px solid #f59e0b; padding:12px; margin:15px 0; border-radius:4px;\"><p style=\"margin:0; color:#92400e; font-size:14px;\"><strong>DISCLAIMER:</strong> These rates are subject to adjustments based on national government mandates. For official billing concerns, please coordinate with the <strong>Calamba Water District Billing Department</strong>.</p><p style=\"margin:5px 0 0 0; color:#92400e; font-size:14px;\">Last verified: As per official CWD website (July 2010 rates still in effect).</p></div>";
+
+            $engResponse = "$engGreeting! Here's the <strong>Water Rates</strong> info:<br><br>$ratesHtml$disclaimer<br><br>Need help calculating your bill or anything else?";
+            $tlResponse = "$greeting! Narito ang <strong>Mga Rate ng Tubig</strong>:<br><br>$ratesHtml$disclaimer<br><br>Kailangan mo ba ng tulong sa pagkalkula ng bill mo o iba pa?";
+            $response = $isEnglish ? $engResponse : $tlResponse;
+
+            echo json_encode(['response' => $response]);
+            mysqli_close($conn);
+            exit;
+        }
+
+        // Existing logic for other services (unchanged) - but now includes violations-penalties via general fetch
+        // Fetch service details
+        $serviceQuery = "SELECT * FROM citizen_charter_services WHERE slug = ?";
+        $stmt = mysqli_prepare($conn, $serviceQuery);
+        mysqli_stmt_bind_param($stmt, 's', $matchedService);
+        mysqli_stmt_execute($stmt);
+        $serviceResult = mysqli_stmt_get_result($stmt);
+        $service = mysqli_fetch_assoc($serviceResult);
+        if (!$service) {
+            throw new Exception('Service not found');
+        }
+
+        // Special handling for Violations and Penalties (fetch from violations_penalties table)
+        if ($matchedService === 'violations-penalties') {
+            $serviceTitle = $isEnglish ? 'Violations and Penalties (As per Calamba Water District Policies)' : 'Mga Paglabag at Parusa (Ayonsa sa Patakaran ng Calamba Water District)';
+
+            // Fetch Penalties
+            $penaltyQuery = "SELECT offense, sub_offense, residential_1st, residential_2nd, residential_3rd, commercial_1st, commercial_2nd, commercial_3rd, notes FROM violations_penalties WHERE service_id = ? ORDER BY id";
+            $penaltyStmt = mysqli_prepare($conn, $penaltyQuery);
+            mysqli_stmt_bind_param($penaltyStmt, 'i', $service['id']);
+            mysqli_stmt_execute($penaltyStmt);
+            $penaltyResult = mysqli_stmt_get_result($penaltyStmt);
+            $penalties = [];
+            while ($row = mysqli_fetch_assoc($penaltyResult)) {
+                $penalties[] = $row;
+            }
+
+            // Build Penalties Table
+            $charterHtml = "<h3 style=\"color:#1f2937; font-size:18px; margin-bottom:10px;\">$serviceTitle</h3>";
+            if (!empty($penalties)) {
+                $charterHtml .= "<p style=\"color:#6b7280; font-size:14px;\">Official Document - Calamba Water District. <a href=\"https://cwd.com.ph/water_rates.html\" target=\"_blank\" style=\"color:#2563eb;\">View Official Policies on CWD Website</a></p>";
+                $charterHtml .= "<table style=\"width:100%; border-collapse:collapse; margin:10px 0; font-size:14px;\">";
+                $charterHtml .= "<tr style=\"background:#f3f4f6;\"><th style=\"border:1px solid #d1d5db; padding:8px;\">Offenses</th><th colspan=\"3\" style=\"border:1px solid #d1d5db; padding:8px;\">Residential</th><th colspan=\"3\" style=\"border:1px solid #d1d5db; padding:8px;\">Commercial</th></tr>";
+                $charterHtml .= "<tr style=\"background:#e5e7eb;\"><th style=\"border:1px solid #d1d5db; padding:8px;\"></th><th style=\"border:1px solid #d1d5db; padding:8px;\">1st</th><th style=\"border:1px solid #d1d5db; padding:8px;\">2nd</th><th style=\"border:1px solid #d1d5db; padding:8px;\">3rd</th><th style=\"border:1px solid #d1d5db; padding:8px;\">1st</th><th style=\"border:1px solid #d1d5db; padding:8px;\">2nd</th><th style=\"border:1px solid #d1d5db; padding:8px;\">3rd</th></tr>";
+
+                $currentMainOffense = '';
+                foreach ($penalties as $penalty) {
+                    $fullOffense = $penalty['sub_offense'] ? $penalty['offense'] . ': ' . $penalty['sub_offense'] : $penalty['offense'];
+                    if ($fullOffense !== $currentMainOffense) {
+                        if ($currentMainOffense && $penalty['sub_offense']) {
+                            $charterHtml .= "<tr style=\"background:#fef2f2;\"><td colspan=\"7\" style=\"border:1px solid #d1d5db; padding:8px; text-align:center; font-style:italic; color:#dc2626;\">Meter Tampering</td></tr>";
+                        }
+                        $charterHtml .= "<tr><th style=\"border:1px solid #d1d5db; padding:8px; text-align:left; font-weight:bold;\">" . htmlspecialchars($fullOffense) . "</th>";
+                        $charterHtml .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($penalty['residential_1st'], 2) . "</td>";
+                        $charterHtml .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($penalty['residential_2nd'], 2) . "</td>";
+                        $charterHtml .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($penalty['residential_3rd'], 2) . "</td>";
+                        $charterHtml .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($penalty['commercial_1st'], 2) . "</td>";
+                        $charterHtml .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($penalty['commercial_2nd'], 2) . "</td>";
+                        $charterHtml .= "<td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">₱" . number_format($penalty['commercial_3rd'], 2) . "</td></tr>";
+                        if ($penalty['notes']) {
+                            $charterHtml .= "<tr><td colspan=\"7\" style=\"border:1px solid #d1d5db; padding:8px; text-align:center; font-style:italic; color:#059669;\">" . htmlspecialchars($penalty['notes']) . "</td></tr>";
+                        }
+                        $currentMainOffense = $fullOffense;
+                    }
+                }
+                $charterHtml .= "</table><p style=\"text-align:right; font-size:12px; color:#9ca3af;\">* All figures in Philippine Peso (PHP)</p>";
+            } else {
+                $charterHtml .= "<p>No penalties data available right now. Please visit the CWD office for the latest.</p>";
+            }
+
+            // Disclaimer
+            $disclaimer = "<div style=\"background:#fffbeb; border-left:4px solid #f59e0b; padding:12px; margin:15px 0; border-radius:4px;\"><p style=\"margin:0; color:#92400e; font-size:14px;\"><strong>DISCLAIMER:</strong> These penalties are subject to enforcement policies and may be adjusted based on national government mandates. For official inquiries or concerns, please coordinate with the <strong>Calamba Water District Enforcement Department</strong>.</p><p style=\"margin:5px 0 0 0; color:#92400e; font-size:14px;\">Last verified: As per official CWD website.</p></div>";
+
+            $engResponse = "$engGreeting! Here's the details for <strong>Violations and Penalties</strong>:<br><br>$charterHtml$disclaimer<br><br>Need help with anything else?";
+            $tlResponse = "$greeting! Narito ang detalye para sa <strong>Mga Paglabag at Parusa</strong>:<br><br>$charterHtml$disclaimer<br><br>Kailangan mo ba ng tulong sa iba pa?";
+            $response = $isEnglish ? $engResponse : $tlResponse;
+
+            echo json_encode(['response' => $response]);
+            mysqli_close($conn);
+            exit;
+        }
+
+        // Fetch Requirements (for non-special services)
+        $reqQuery = "SELECT section_title, requirement_text FROM service_requirements WHERE service_id = ? ORDER BY id";
+        $reqStmt = mysqli_prepare($conn, $reqQuery);
+        mysqli_stmt_bind_param($reqStmt, 'i', $service['id']);
+        mysqli_stmt_execute($reqStmt);
+        $reqResult = mysqli_stmt_get_result($reqStmt);
+        $requirements = [];
+        while ($row = mysqli_fetch_assoc($reqResult)) {
+            $requirements[] = $row;
+        }
+
+        // Fetch Procedures
+        $procQuery = "SELECT step_number, description, processing_time, fee, responsible, location FROM service_procedures WHERE service_id = ? ORDER BY step_number";
+        $procStmt = mysqli_prepare($conn, $procQuery);
+        mysqli_stmt_bind_param($procStmt, 'i', $service['id']);
+        mysqli_stmt_execute($procStmt);
+        $procResult = mysqli_stmt_get_result($procStmt);
+        $procedures = [];
+        while ($row = mysqli_fetch_assoc($procResult)) {
+            $procedures[] = $row;
+        }
+
+        // Fetch Fees
+        $feeQuery = "SELECT fee_category, particular, amount FROM service_fees WHERE service_id = ? ORDER BY id";
+        $feeStmt = mysqli_prepare($conn, $feeQuery);
+        mysqli_stmt_bind_param($feeStmt, 'i', $service['id']);
+        mysqli_stmt_execute($feeStmt);
+        $feeResult = mysqli_stmt_get_result($feeStmt);
+        $fees = [];
+        while ($row = mysqli_fetch_assoc($feeResult)) {
+            $fees[] = $row;
+        }
+
+        // Fetch Remarks
+        $remarkQuery = "SELECT remark FROM service_remarks WHERE service_id = ? ORDER BY id";
+        $remarkStmt = mysqli_prepare($conn, $remarkQuery);
+        mysqli_stmt_bind_param($remarkStmt, 'i', $service['id']);
+        mysqli_stmt_execute($remarkStmt);
+        $remarkResult = mysqli_stmt_get_result($remarkStmt);
+        $remarks = [];
+        while ($row = mysqli_fetch_assoc($remarkResult)) {
+            $remarks[] = $row['remark'];
+        }
+
+        // Build formatted HTML response
+        $charterHtml = "<h3 style=\"color:#1f2937; font-size:18px; margin-bottom:10px;\">" . htmlspecialchars($service['main_title']) . "</h3>";
+        if ($service['subtitle']) $charterHtml .= "<p style=\"color:#6b7280; font-style:italic;\">" . htmlspecialchars($service['subtitle']) . "</p>";
+
+        // Requirements Table (simple HTML table)
+        if (!empty($requirements)) {
+            $charterHtml .= "<p><strong>Requirements:</strong></p><table style=\"width:100%; border-collapse:collapse; margin:10px 0; font-size:14px;\">";
+            $charterHtml .= "<tr style=\"background:#f3f4f6;\"><th style=\"border:1px solid #d1d5db; padding:8px; text-align:left;\">Item</th></tr>";
+            foreach ($requirements as $req) {
+                $section = $req['section_title'] ? "<strong>" . htmlspecialchars($req['section_title']) . ":</strong><br>" : '';
+                $charterHtml .= "<tr><td style=\"border:1px solid #d1d5db; padding:8px;\">" . $section . htmlspecialchars($req['requirement_text']) . "</td></tr>";
+            }
+            $charterHtml .= "</table>";
+        }
+
+        // Procedures Table
+        if (!empty($procedures)) {
+            $charterHtml .= "<p><strong>Procedure:</strong></p><table style=\"width:100%; border-collapse:collapse; margin:10px 0; font-size:14px;\">";
+            $charterHtml .= "<tr style=\"background:#f3f4f6;\"><th style=\"border:1px solid #d1d5db; padding:8px;\">Step</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Description</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Time/Fee</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Responsible</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Location</th></tr>";
+            foreach ($procedures as $proc) {
+                $timeFee = ($proc['processing_time'] ? htmlspecialchars($proc['processing_time']) : '') . ($proc['fee'] ? '<br>₱' . number_format($proc['fee'], 2) : '');
+                $charterHtml .= "<tr><td style=\"border:1px solid #d1d5db; padding:8px;\">" . htmlspecialchars($proc['step_number']) . "</td><td style=\"border:1px solid #d1d5db; padding:8px;\">" . htmlspecialchars($proc['description']) . "</td><td style=\"border:1px solid #d1d5db; padding:8px; text-align:center;\">$timeFee</td><td style=\"border:1px solid #d1d5db; padding:8px;\">" . htmlspecialchars($proc['responsible']) . "</td><td style=\"border:1px solid #d1d5db; padding:8px;\">" . htmlspecialchars($proc['location']) . "</td></tr>";
+            }
+            if ($service['total_time']) $charterHtml .= "<tr style=\"background:#e5e7eb; font-weight:bold;\"><td colspan=\"2\">Total Time:</td><td>" . htmlspecialchars($service['total_time']) . "</td><td colspan=\"2\"></td></tr>";
+            if ($service['total_fee']) $charterHtml .= "<tr style=\"background:#e5e7eb; font-weight:bold;\"><td colspan=\"2\">Total Fee:</td><td>₱" . number_format($service['total_fee'], 2) . "</td><td colspan=\"2\"></td></tr>";
+            $charterHtml .= "</table>";
+        }
+
+        // Fees Table (if any)
+        if (!empty($fees)) {
+            $charterHtml .= "<p><strong>Fees:</strong></p><table style=\"width:100%; border-collapse:collapse; margin:10px 0; font-size:14px;\">";
+            $charterHtml .= "<tr style=\"background:#f3f4f6;\"><th style=\"border:1px solid #d1d5db; padding:8px;\">Category</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Particular</th><th style=\"border:1px solid #d1d5db; padding:8px;\">Amount (₱)</th></tr>";
+            foreach ($fees as $fee) {
+                $charterHtml .= "<tr><td style=\"border:1px solid #d1d5db; padding:8px;\">" . ($fee['fee_category'] ? htmlspecialchars($fee['fee_category']) : '') . "</td><td style=\"border:1px solid #d1d5db; padding:8px;\">" . htmlspecialchars($fee['particular']) . "</td><td style=\"border:1px solid #d1d5db; padding:8px; text-align:right;\">" . ($fee['amount'] ? number_format($fee['amount'], 2) : 'Varies') . "</td></tr>";
+            }
+            $charterHtml .= "</table>";
+        }
+
+        // Remarks
+        if (!empty($remarks)) {
+            $charterHtml .= "<p><strong>Remarks:</strong></p><ul style=\"margin:10px 0; padding-left:20px;\">";
+            foreach ($remarks as $remark) {
+                $charterHtml .= "<li style=\"margin:5px 0; line-height:1.5;\">" . htmlspecialchars($remark) . "</li>";
+            }
+            $charterHtml .= "</ul>";
+        }
+
+        $engResponse = "$engGreeting! Here's the details for the <strong>Citizen's Charter: " . htmlspecialchars($service['sidebar_title']) . "</strong>:<br><br>$charterHtml<br><br>Need help with anything else?";
+        $tlResponse = "$greeting! Narito ang detalye para sa <strong>Citizen's Charter: " . htmlspecialchars($service['sidebar_title']) . "</strong>:<br><br>$charterHtml<br><br>Kailangan mo ba ng tulong sa iba pa?";
+        $response = $isEnglish ? $engResponse : $tlResponse;
+
+        echo json_encode(['response' => $response]);
+        mysqli_close($conn);
+        exit;
+    }
+
     // === 1. CREATE ACCOUNT ===
-    if (preg_match('/\b(create|gumawa|gagawa|mag[- ]?register|mag[- ]?rehistro|sign\s*up|account|register|rehistro)\b/iu', $userLower)) {
+    if (preg_match('/\b(create|gumawa|gagawa|mag[- ]?register|mag[- ]?rehistro|sign\s*up|register|rehistro)\b/iu', $userLower)) {
         $linkText = $isEnglish ? 'Register Here!' : 'Mag-register Dito!';
         $registerLink = '<a href="register.php" style="color:#2563eb; text-decoration:underline; font-weight:700;" target="_blank">'.$linkText.'</a>';
 
         $response = $isEnglish
-            ? "$greeting! Para makagawa ng account, i-click mo lang ‘to → <strong>$registerLink</strong><br><br>Pagkatapos mag-register, pwede ka nang mag-file ng reklamo, tingnan ang bill, magbayad online, at marami pang iba!<br><br>Gusto mo bang gabayan kita?"
+            ? "$engGreeting! To create an account, just click this → <strong>$registerLink</strong><br><br>After registering, you can file complaints, view your bill, pay online, and more!<br><br>Want me to guide you?"
             : "$greeting! Para makagawa ka ng account, i-click mo lang ‘to → <strong>$registerLink</strong><br><br>Pagkatapos mag-register, pwede ka nang mag-file ng reklamo, tingnan ang bill mo, magbayad online, at marami pang iba!<br><br>Gusto mo bang gabayan kita?";
 
         usleep(1600000 + rand(0, 900000));
@@ -258,7 +536,7 @@ try {
     if (preg_match('/\b(organization|org chart|structure|taas puno|organisasyon|staff|personnel|employees|management team|board members|lahat ng manager|full list)\b/iu', $userLower)) {
         usleep(1500000 + rand(0, 1000000));
         $response = $isEnglish
-            ? "$greeting! Narito ang full <strong>Organizational Structure</strong> ng CWD:<br><br>$boardHtml$managementHtml<br><br>Need more details on anyone?"
+            ? "$engGreeting! Here's the full <strong>Organizational Structure</strong> of CWD:<br><br>$boardHtml$managementHtml<br><br>Need more details on anyone?"
             : "$greeting! Narito ang buong <strong>Organizational Structure</strong> ng CWD:<br><br>$boardHtml$managementHtml<br><br>Kailangan mo ba ng higit pang detalye sa sino man?";
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -267,7 +545,7 @@ try {
     if (preg_match('/\b(stats|statistics|report|data|bilang|count|feedback|complaints|resolved|resolution time)\b/iu', $userLower)) {
         usleep(1200000 + rand(0, 800000));
         $response = $isEnglish
-            ? "$greeting! Narito ang ilang <strong>public statistics</strong> mula sa CWD:<br><br>$statsHtml<br><br>Want the latest reports or more info?"
+            ? "$engGreeting! Here's some <strong>public statistics</strong> from CWD:<br><br>$statsHtml<br><br>Want the latest reports or more info?"
             : "$greeting! Narito ang ilang <strong>public statistics</strong> mula sa CWD:<br><br>$statsHtml<br><br>Gusto mo ba ng latest reports o higit pang info?";
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -279,10 +557,10 @@ try {
             $title = $staticMap['history']['title'];
             $content = $staticMap['history']['content'];
             $response = $isEnglish
-                ? "$greeting! Here is the <strong>$title</strong> of Calamba Water District:<br><br>$content<br><br>Do you have any other questions?"
+                ? "$engGreeting! Here is the <strong>$title</strong> of Calamba Water District:<br><br>$content<br><br>Do you have any other questions?"
                 : "$greeting! Narito ang <strong>$title</strong> ng Calamba Water District:<br><br>$content<br><br>May iba ka pa bang itatanong?";
         } else {
-            $response = $isEnglish ? "$greeting! Sorry, hindi ko mahanap ang history ngayon. Subukan mo ulit mamaya!" : "$greeting! Sorry po, hindi ko mahanap ang history ngayon. Subukan mo ulit mamaya!";
+            $response = $isEnglish ? "$engGreeting! Sorry, I can't find the history right now. Try again later!" : "$greeting! Sorry po, hindi ko mahanap ang history ngayon. Subukan mo ulit mamaya!";
         }
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -294,10 +572,10 @@ try {
             $title = $staticMap['mission']['title'];
             $content = $staticMap['mission']['content'];
             $response = $isEnglish
-                ? "$greeting! Here is our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
+                ? "$engGreeting! Here is our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
                 : "$greeting! Narito ang aming <strong>$title</strong>:<br><br>$content<br><br>May iba ka pa bang itatanong?";
         } else {
-            $response = $isEnglish ? "$greeting! Sorry, hindi ko mahanap ang mission ngayon. Subukan mo ulit mamaya!" : "$greeting! Sorry po, hindi ko mahanap ang mission ngayon. Subukan mo ulit mamaya!";
+            $response = $isEnglish ? "$engGreeting! Sorry, I can't find the mission right now. Try again later!" : "$greeting! Sorry po, hindi ko mahanap ang mission ngayon. Subukan mo ulit mamaya!";
         }
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -309,10 +587,10 @@ try {
             $title = $staticMap['vision']['title'];
             $content = $staticMap['vision']['content'];
             $response = $isEnglish
-                ? "$greeting! Here is our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
+                ? "$engGreeting! Here is our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
                 : "$greeting! Narito ang aming <strong>$title</strong>:<br><br>$content<br><br>May iba ka pa bang itatanong?";
         } else {
-            $response = $isEnglish ? "$greeting! Sorry, hindi ko mahanap ang vision ngayon. Subukan mo ulit mamaya!" : "$greeting! Sorry po, hindi ko mahanap ang vision ngayon. Subukan mo ulit mamaya!";
+            $response = $isEnglish ? "$engGreeting! Sorry, I can't find the vision right now. Try again later!" : "$greeting! Sorry po, hindi ko mahanap ang vision ngayon. Subukan mo ulit mamaya!";
         }
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -324,10 +602,10 @@ try {
             $title = $staticMap['core_values']['title'];
             $content = $staticMap['core_values']['content'];
             $response = $isEnglish
-                ? "$greeting! Here are our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
+                ? "$engGreeting! Here are our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
                 : "$greeting! Narito ang aming <strong>$title</strong>:<br><br>$content<br><br>May iba ka pa bang itatanong?";
         } else {
-            $response = $isEnglish ? "$greeting! Sorry, hindi ko mahanap ang core values ngayon. Subukan mo ulit mamaya!" : "$greeting! Sorry po, hindi ko mahanap ang core values ngayon. Subukan mo ulit mamaya!";
+            $response = $isEnglish ? "$engGreeting! Sorry, I can't find the core values right now. Try again later!" : "$greeting! Sorry po, hindi ko mahanap ang core values ngayon. Subukan mo ulit mamaya!";
         }
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -339,10 +617,10 @@ try {
             $title = $staticMap['quality_policy']['title'];
             $content = $staticMap['quality_policy']['content'];
             $response = $isEnglish
-                ? "$greeting! Here is our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
+                ? "$engGreeting! Here is our <strong>$title</strong>:<br><br>$content<br><br>Do you have any other questions?"
                 : "$greeting! Narito ang aming <strong>$title</strong>:<br><br>$content<br><br>May iba ka pa bang itatanong?";
         } else {
-            $response = $isEnglish ? "$greeting! Sorry, hindi ko mahanap ang quality policy ngayon. Subukan mo ulit mamaya!" : "$greeting! Sorry po, hindi ko mahanap ang quality policy ngayon. Subukan mo ulit mamaya!";
+            $response = $isEnglish ? "$engGreeting! Sorry, I can't find the quality policy right now. Try again later!" : "$greeting! Sorry po, hindi ko mahanap ang quality policy ngayon. Subukan mo ulit mamaya!";
         }
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -361,7 +639,7 @@ try {
             }
         }
         $response = $isEnglish
-            ? "$greeting! The <strong>General Manager</strong> of CWD is <span style=\"color:#2563eb;font-weight:700;\">$generalManager</span>. May iba ka pa bang itatanong?"
+            ? "$engGreeting! The <strong>General Manager</strong> of CWD is <span style=\"color:#2563eb;font-weight:700;\">$generalManager</span>. Any other questions?"
             : "$greeting! Ang <strong>General Manager</strong> ng CWD ay si <span style=\"color:#2563eb;font-weight:700;\">$generalManager</span>. May iba ka pa bang itatanong?";
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
     }
@@ -387,7 +665,7 @@ try {
             }
             $displayTitle = ucwords(str_replace('_', ' ', $title));
             $response = $isEnglish
-                ? "$greeting! The <strong>$displayTitle</strong> is <span style=\"color:#2563eb;font-weight:700;\">$name</span>. May iba ka pa bang itatanong?"
+                ? "$engGreeting! The <strong>$displayTitle</strong> is <span style=\"color:#2563eb;font-weight:700;\">$name</span>. Any other questions?"
                 : "$greeting! Ang <strong>$displayTitle</strong> ay si <span style=\"color:#2563eb;font-weight:700;\">$name</span>. May iba ka pa bang itatanong?";
             usleep(900000 + rand(0, 600000));
             echo json_encode(['response' => $response]); mysqli_close($conn); exit;
@@ -415,7 +693,7 @@ try {
                 }
             }
             $response = $isEnglish
-                ? "$greeting! The <strong>$displayDept</strong> is <span style=\"color:#2563eb;font-weight:700;\">$name</span>. May iba ka pa bang itatanong?"
+                ? "$engGreeting! The <strong>$displayDept</strong> is <span style=\"color:#2563eb;font-weight:700;\">$name</span>. Any other questions?"
                 : "$greeting! Ang <strong>$displayDept</strong> ay si <span style=\"color:#2563eb;font-weight:700;\">$name</span>. May iba ka pa bang itatanong?";
             usleep(900000 + rand(0, 600000));
             echo json_encode(['response' => $response]); mysqli_close($conn); exit;
@@ -427,10 +705,10 @@ try {
     $isComplaint = false;
     foreach ($complaintKeywords as $kw) if (mb_strpos($userLower, $kw) !== false) { $isComplaint = true; break; }
     if ($isComplaint) {
-        $registerLink = '<a href="register.php" style="color:#2563eb; text-decoration:underline; font-weight:700;" target="_blank">mag-register dito</a>';
-        $loginLink    = '<a href="login.php" style="color:#2563eb; text-decoration:underline; font-weight:700;" target="_blank">mag-log in</a>';
+        $registerLink = '<a href="register.php" style="color:#2563eb; text-decoration:underline; font-weight:700;" target="_blank">register here</a>';
+        $loginLink    = '<a href="login.php" style="color:#2563eb; text-decoration:underline; font-weight:700;" target="_blank">log in</a>';
         $response = $isEnglish
-            ? "$greeting! May problema ka sa tubig? Baka gusto mo nang <strong>mag-submit ng official complaint</strong> para maayos agad?<br><br>Wala pang account? <strong>$registerLink</strong><br>May account ka na? <strong>$loginLink</strong> → File Complaint<br><br>Gusto mo bang tulungan kita?"
+            ? "$engGreeting! Got a water issue? Maybe you'd like to <strong>submit an official complaint</strong> to get it fixed right away?<br><br>No account yet? <strong>$registerLink</strong><br>Have an account? <strong>$loginLink</strong> → File Complaint<br><br>Want me to help you?"
             : "$greeting! Parang may problema ka sa tubig ah! Baka gusto mo nang <strong>mag-submit ng opisyal na reklamo</strong> para maayos agad?<br><br>Wala ka pang account → <strong>$registerLink</strong><br>May account ka na → <strong>$loginLink</strong> tapos mag-file ng reklamo<br><br>Gusto mo bang gabayan kita?";
         usleep(1200000 + rand(0, 800000));
         echo json_encode(['response' => $response]); mysqli_close($conn); exit;
@@ -442,7 +720,7 @@ try {
         $gmapEmbed = '<iframe src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d15472.411686808355!2d121.1576812!3d14.1887497!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33bd63dde4221d71%3A0x2b48f46c8c2e3e91!2sCalamba%20Water%20District!5e0!3m2!1sen!2sph!4v1763387982920!5m2!1sen!2sph" width="100%" height="420" style="border:0; border-radius:12px; margin:15px 0; box-shadow:0 4px 12px rgba(0,0,0,0.15);" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
 
         $response = $isEnglish
-            ? "$greeting! The Calamba Water District main office is located at:<br><br>
+            ? "$engGreeting! The Calamba Water District main office is located at:<br><br>
                <strong>Lake View Subd., St Paul St, Calamba, 4027 Laguna</strong><br><br>
                Here’s the exact location on Google Maps:<br>$gmapEmbed<br>
                Open Monday–Friday, 8:00 AM – 5:00 PM"
