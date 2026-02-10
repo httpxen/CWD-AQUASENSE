@@ -115,7 +115,7 @@ function getFullOrgMap($conn) {
                    pos.position_id";
     $orgResult = mysqli_query($conn, $orgQuery);
     if (!$orgResult) return ['board' => [], 'management' => []];
-   
+  
     $fullOrgMap = ['board' => [], 'management' => []];
     while ($row = mysqli_fetch_assoc($orgResult)) {
         $cat = $row['category'];
@@ -398,14 +398,40 @@ try {
     $lastUserMessage = end($input['messages']);
     $userText = strtolower($lastUserMessage['content'] ?? '');
     $userLower = mb_strtolower($userText, 'UTF-8');
-    // === LANGUAGE DETECTION ===
-    $isEnglish = false;
-    $englishWords = ['who','what','general','manager','chairperson','secretary','treasurer','department','head','bill','account','register','create','sign up','where','location','office','address','statistics','stats','feedback','complaints','history','mission','vision','values'];
-    foreach ($englishWords as $word) {
-        if (strpos($userLower, $word) !== false) { $isEnglish = true; break; }
-    }
-    if (!$isEnglish && preg_match('/^[a-zA-Z0-9\s\.\,\!\?]+$/', $userText)) $isEnglish = true;
+    // === LANGUAGE DETECTION (Enhanced with OpenAI) ===
+    $client = \OpenAI::client($apiKey); // Initialize client here for detection
+    $detectPrompt = [
+        'role' => 'system',
+        'content' => 'Detect the primary language of the following user message. Respond with ONLY "en" for English (or dominant English), "tl" for Tagalog/Filipino (or dominant Tagalog), or "mixed" if truly balanced. Be accurate and concise—no explanations.'
+    ];
+    $detectMessages = [
+        $detectPrompt,
+        $lastUserMessage
+    ];
+    $detectResult = $client->chat()->create([
+        'model' => 'gpt-4o-mini',
+        'messages' => $detectMessages,
+        'max_tokens' => 5,
+        'temperature' => 0.1,
+    ]);
+    $langResponse = trim($detectResult->choices[0]->message->content ?? 'tl');
+    $isEnglish = ($langResponse === 'en');
     $lang = $isEnglish ? 'en' : 'tl';
+    if ($langResponse === 'mixed') {
+        // Fallback to keyword-based for mixed
+        $tagalogWords = ['paano', 'ano', 'sino', 'kailan', 'saan', 'bakit', 'magandang', 'umaga', 'hapon', 'gabi', 'salamat', 'po', 'ho', 'reklamo', 'presyo', 'aplay', 'bayad', 'tubig', 'halaga', 'koneksyon', 'serbisyo'];
+        $englishWords = ['who','what','general','manager','chairperson','secretary','treasurer','department','head','bill','account','register','create','sign up','where','location','office','address','statistics','stats','feedback','complaints','history','mission','vision','values'];
+        $tagalogCount = 0;
+        $englishCount = 0;
+        foreach ($tagalogWords as $word) {
+            if (strpos($userLower, $word) !== false) $tagalogCount++;
+        }
+        foreach ($englishWords as $word) {
+            if (strpos($userLower, $word) !== false) $englishCount++;
+        }
+        $isEnglish = ($englishCount > $tagalogCount && $englishCount > 2);
+        $lang = $isEnglish ? 'en' : 'tl';
+    }
     // === KEYWORDS ===
     $boardKeywords = ['chairman', 'chairperson', 'board', 'directors', 'bod', 'chair'];
     $mgmtKeywords = ['gm', 'general manager', 'manager', 'head', 'department', 'division'];
@@ -442,7 +468,6 @@ try {
         }
     }
     // === OPENAI CALL ===
-    $client = \OpenAI::client($apiKey);
     $systemPrompt = [
         'role' => 'system',
         'content' => "You are Kuya Daloy, a friendly assistant for Calamba Water District. Respond in Filipino, English, or Taglish based on user language. Be natural, helpful, and concise. Use the full conversation history for context.
@@ -539,7 +564,6 @@ Static Info: $staticHtml"
         if ($matchedService === 'water-rates') {
             $serviceId = 6; // Payment of Water Bill service_id
             $serviceTitle = $isEnglish ? 'Schedule of Water Rates (Effective July 2010)' : 'Mga Rate ng Tubig (Epektibo Hulyo 2010)';
-
             // Fetch Fees only (rates)
             $feeQuery = "SELECT fee_category, particular, amount FROM service_fees WHERE service_id = ? AND fee_category LIKE '%List of Formula%' ORDER BY fee_category, id";
             $feeStmt = mysqli_prepare($conn, $feeQuery);
@@ -550,12 +574,10 @@ Static Info: $staticHtml"
             while ($row = mysqli_fetch_assoc($feeResult)) {
                 $fees[] = $row;
             }
-
             // Build Rates Tables (separate for Category A and B) - Tailwind classes
             $charterHtml = "<h3 class='text-lg font-bold text-gray-800 mb-2'>$serviceTitle</h3>";
             if (!empty($fees)) {
                 $charterHtml .= "<p class='text-gray-600 italic mb-4'>Official Document - Calamba Water District. <a href='https://cwd.com.ph/water_rates.html' target='_blank' class='text-blue-600 hover:text-blue-800 underline'>View Official Rates on CWD Website</a><br>Note: These are historical rates. Check CWD office for current updates.</p>";
-
                 // Group fees by category and meter size
                 $groupedFees = ['Category A: Service Areas (Residential / Government)' => [], 'Category B: Service Areas (NHA, VLP, VPB, Major Homes)' => []];
                 foreach ($fees as $fee) {
@@ -565,15 +587,13 @@ Static Info: $staticHtml"
                     if (preg_match('/^((?:\d+\s+)?\d+(?:\/\d+)?")?\s*(.*)$/u', $particular, $matches)) {
                         $meter = $matches[1] ?? '';
                         $desc = trim($matches[2]);
-                        if ($meter) {  // Only if meter extracted
+                        if ($meter) { // Only if meter extracted
                             $groupedFees[$cat][$meter][$desc] = $fee['amount'];
                         }
                     }
                 }
-
                 // Meters order - with space for 1 1/2"
                 $meters = ['1/2"', '3/4"', '1"', '1 1/2"', '2"'];
-
                 foreach ($groupedFees as $category => $metersData) {
                     $charterHtml .= "<div class='mb-6'><h4 class='text-base font-semibold text-blue-800 mb-2'>$category</h4>";
                     $charterHtml .= "<div class='bg-gray-50 rounded-lg p-3 overflow-x-auto'>";
@@ -595,17 +615,14 @@ Static Info: $staticHtml"
             } else {
                 $charterHtml .= "<p class='text-gray-600'>No rates data available right now. Please visit the CWD office for the latest.</p>";
             }
-
             // Disclaimer
             $disclaimer = "<div class='bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-4 rounded-r-lg'><p class='text-sm text-yellow-800 mb-1'><strong>DISCLAIMER:</strong> These rates are subject to adjustments based on national government mandates. For official billing concerns, please coordinate with the <strong>Calamba Water District Billing Department</strong>.</p><p class='text-sm text-yellow-700'>Last verified: As per official CWD website (July 2010 rates still in effect).</p></div>";
-
             $engResponse = "$engGreeting! Here's the details for the <strong>Citizen's Charter: Water Rates</strong>:<br><br>$charterHtml$disclaimer<br><br>Need help with anything else?";
             $tlResponse = "$greeting! Narito ang detalye para sa <strong>Citizen's Charter: Mga Rate ng Tubig</strong>:<br><br>$charterHtml$disclaimer<br><br>Kailangan mo ba ng tulong sa iba pa?";
             $response = "<div class='bg-white rounded-2xl border border-blue-200 p-6 shadow-sm'>" . ($isEnglish ? $engResponse : $tlResponse) . "</div>";
             echo json_encode(['response' => $response], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
             exit;
         }
-
         // Special handling for Violations and Penalties (fetch from violations_penalties table)
         if ($matchedService === 'violations-penalties') {
             // Fetch service details first to get service_id
@@ -620,9 +637,7 @@ Static Info: $staticHtml"
                 echo json_encode(['response' => $response], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
                 exit;
             }
-
             $serviceTitle = $isEnglish ? 'Violations and Penalties (As per Calamba Water District Policies)' : 'Mga Paglabag at Parusa (Ayonsa sa Patakaran ng Calamba Water District)';
-
             // Fetch Penalties
             $penaltyQuery = "SELECT offense, sub_offense, residential_1st, residential_2nd, residential_3rd, commercial_1st, commercial_2nd, commercial_3rd, notes FROM violations_penalties WHERE service_id = ? ORDER BY id";
             $penaltyStmt = mysqli_prepare($conn, $penaltyQuery);
@@ -633,7 +648,6 @@ Static Info: $staticHtml"
             while ($row = mysqli_fetch_assoc($penaltyResult)) {
                 $penalties[] = $row;
             }
-
             // Build Penalties Table - Tailwind classes
             $charterHtml = "<h3 class='text-lg font-bold text-gray-800 mb-2'>$serviceTitle</h3>";
             if (!empty($penalties)) {
@@ -642,7 +656,6 @@ Static Info: $staticHtml"
                 $charterHtml .= "<table class='min-w-full divide-y divide-gray-200'>";
                 $charterHtml .= "<thead><tr><th class='px-3 py-2 text-left text-xs font-medium text-gray-500'>Offenses</th><th colspan='3' class='px-3 py-2 text-center text-xs font-medium text-gray-500'>Residential</th><th colspan='3' class='px-3 py-2 text-center text-xs font-medium text-gray-500'>Commercial</th></tr>";
                 $charterHtml .= "<tr class='bg-gray-100'><th class='px-3 py-2 text-left text-xs font-medium text-gray-500'></th><th class='px-3 py-2 text-center text-xs font-medium text-gray-500'>1st</th><th class='px-3 py-2 text-center text-xs font-medium text-gray-500'>2nd</th><th class='px-3 py-2 text-center text-xs font-medium text-gray-500'>3rd</th><th class='px-3 py-2 text-center text-xs font-medium text-gray-500'>1st</th><th class='px-3 py-2 text-center text-xs font-medium text-gray-500'>2nd</th><th class='px-3 py-2 text-center text-xs font-medium text-gray-500'>3rd</th></tr></thead><tbody class='bg-white divide-y divide-gray-200'>";
-
                 $currentMainOffense = '';
                 foreach ($penalties as $penalty) {
                     $fullOffense = $penalty['sub_offense'] ? $penalty['offense'] . ': ' . $penalty['sub_offense'] : $penalty['offense'];
@@ -667,17 +680,14 @@ Static Info: $staticHtml"
             } else {
                 $charterHtml .= "<p class='text-gray-600'>No penalties data available right now. Please visit the CWD office for the latest.</p>";
             }
-
             // Disclaimer
             $disclaimer = "<div class='bg-yellow-50 border-l-4 border-yellow-400 p-4 mt-4 rounded-r-lg'><p class='text-sm text-yellow-800 mb-1'><strong>DISCLAIMER:</strong> These penalties are subject to enforcement policies and may be adjusted based on national government mandates. For official inquiries or concerns, please coordinate with the <strong>Calamba Water District Enforcement Department</strong>.</p><p class='text-sm text-yellow-700'>Last verified: As per official CWD website.</p></div>";
-
             $engResponse = "$engGreeting! Here's the details for <strong>Violations and Penalties</strong>:<br><br>$charterHtml$disclaimer<br><br>Need help with anything else?";
             $tlResponse = "$greeting! Narito ang detalye para sa <strong>Mga Paglabag at Parusa</strong>:<br><br>$charterHtml$disclaimer<br><br>Kailangan mo ba ng tulong sa iba pa?";
             $response = "<div class='bg-white rounded-2xl border border-blue-200 p-6 shadow-sm'>" . ($isEnglish ? $engResponse : $tlResponse) . "</div>";
             echo json_encode(['response' => $response], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
             exit;
         }
-
         // Fetch service details
         $serviceQuery = "SELECT * FROM citizen_charter_services WHERE slug = ?";
         $stmt = mysqli_prepare($conn, $serviceQuery);
@@ -788,7 +798,7 @@ Static Info: $staticHtml"
                             <i class='fas fa-question-circle text-lg'></i>
                         </div>
                         <div>
-                            <h3 class='text-lg font-bold text-blue-800 mb-2'>Sige, tutulungan kita sa pag-file ng complaint!</h3>
+                            <h3 class='text-lg font-bold text-blue-800 mb-2'>Sige! Tutulungan kita mag file ng inquiries/complaints!</h3>
                             <p class='text-sm text-blue-700'>Pumili ng kategorya mula sa listahan:</p>
                         </div>
                     </div>
@@ -846,7 +856,7 @@ Static Info: $staticHtml"
                 if (isset($decoded['category'], $decoded['description'])) {
                     $description = trim($decoded['description']);
                     $category = trim($decoded['category']);
-                   
+                  
                     if (strlen($description) < 10 || trim(strip_tags($description)) === '' || strtolower(trim($description)) === strtolower($category)) {
                         $response = "<div class='bg-gradient-to-r from-yellow-50 to-amber-50 rounded-2xl border border-yellow-200/50 p-6 shadow-sm'>
                             <div class='flex items-start gap-3 mb-4'>
@@ -861,7 +871,7 @@ Static Info: $staticHtml"
                         </div>";
                         break;
                     }
-                   
+                  
                     if (!in_array($category, $ALLOWED_CATEGORIES)) {
                         $closest = findClosestCategory($category, $ALLOWED_CATEGORIES);
                         if (!$closest) {
@@ -1012,7 +1022,7 @@ Static Info: $staticHtml"
                 if (isset($decoded['text'], $decoded['sentiment'])) {
                     $text = trim($decoded['text']);
                     $sentiment = ucfirst($decoded['sentiment'] ?? 'neutral');
-                   
+                  
                     if (strlen($text) < 10 || trim(strip_tags($text)) === '') {
                         $response = "<div class='bg-gradient-to-r from-yellow-50 to-amber-50 rounded-2xl border border-yellow-200/50 p-6 shadow-sm'>
                             <div class='flex items-start gap-3 mb-4'>
@@ -1027,7 +1037,7 @@ Static Info: $staticHtml"
                         </div>";
                         break;
                     }
-                   
+                  
                     $sentimentIcon = strtolower($sentiment) === 'positive' ? 'fa-thumbs-up text-green-500' : (strtolower($sentiment) === 'negative' ? 'fa-thumbs-down text-red-500' : 'fa-minus text-gray-500');
                     $response = "<div class='bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl border border-green-200/50 p-6 shadow-sm'>
                         <div class='flex items-start gap-3 mb-4'>
@@ -1427,7 +1437,7 @@ Static Info: $staticHtml"
                 $gmapEmbed = '<iframe src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d15472.411686808355!2d121.1576812!3d14.1887497!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33bd63dde4221d71%3A0x2b48f46c8c2e3e91!2sCalamba%20Water%20District!5e0!3m2!1sen!2sph!4v1763387982920!5m2!1sen!2sph" width="100%" height="300" style="border:0; border-radius:12px; margin:15px 0; box-shadow:0 4px 12px rgba(0,0,0,0.15);" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
                 $response = "<div class='bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-200 p-6 shadow-sm'>
                     <h3 class='text-lg font-bold text-blue-800 mb-4 flex items-center gap-2'><i class='fas fa-map-marker-alt'></i>Office Location</h3>
-                    <p class='text-gray-700 mb-2'><strong>Lake View Subd., St Paul St, Calamba, 4027 Laguna</strong></p>
+                    <p class='text-gray-700 mb-2'>                    <p class='text-gray-700 mb-2'><strong>Lake View Subd., St Paul St, Calamba, 4027 Laguna</strong></p>
                     <p class='text-sm text-gray-600 mb-4'>Open Monday–Friday, 8:00 AM – 5:00 PM</p>
                     <div class='bg-white rounded-lg overflow-hidden shadow-sm'>{$gmapEmbed}</div>
                 </div>";
@@ -1440,21 +1450,21 @@ Static Info: $staticHtml"
         $response = $rawResponse;
     }
     // === SANITIZE HTML ===
-$allowed = '<div><p><strong><em><span><a><br><b><i><u><ul><li><table><thead><tbody><tr><th><td><i class="fas';
-$response = strip_tags($response, $allowed);
-$response = preg_replace_callback('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is', function($m) {
-    $href = trim($m[1]);
-    $text = trim(strip_tags($m[2]));
-    // Always style and secure external/absolute links
-    if (preg_match('/^https?:\/\//i', $href) || preg_match('/^\/|^\./', $href)) {
-        return '<a href="' . htmlspecialchars($href, ENT_QUOTES) . '" class="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener noreferrer">' . $text . '</a>';
-    }
-    // For other hrefs, strip to text
-    return $text;
-}, $response);
-// === CLEAN OUTPUT ===
-ob_end_clean(); // Discard any buffered output
-echo json_encode(['response' => $response], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+    $allowed = '<div><p><strong><em><span><a><br><b><i><u><ul><li><table><thead><tbody><tr><th><td><i class="fas';
+    $response = strip_tags($response, $allowed);
+    $response = preg_replace_callback('/<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)<\/a>/is', function($m) {
+        $href = trim($m[1]);
+        $text = trim(strip_tags($m[2]));
+        // Always style and secure external/absolute links
+        if (preg_match('/^https?:\/\//i', $href) || preg_match('/^\/|^\./', $href)) {
+            return '<a href="' . htmlspecialchars($href, ENT_QUOTES) . '" class="text-blue-600 underline hover:text-blue-800" target="_blank" rel="noopener noreferrer">' . $text . '</a>';
+        }
+        // For other hrefs, strip to text
+        return $text;
+    }, $response);
+    // === CLEAN OUTPUT ===
+    ob_end_clean(); // Discard any buffered output
+    echo json_encode(['response' => $response], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 } catch (Throwable $e) {
     error_log("Chat Error: " . $e->getMessage());
     ob_end_clean();

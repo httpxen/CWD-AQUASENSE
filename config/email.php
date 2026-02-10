@@ -61,6 +61,28 @@ class EmailService {
             return false;
         }
     }
+
+    public function sendUsernameRecovery($to, $username) {
+        try {
+            $this->mail->clearAddresses();
+            $this->mail->addAddress($to, $username);
+            
+            $this->mail->Subject = 'Username Recovery - CWD AquaSense';
+            
+            $loginLink = "https://cwdaquasense.com/login.php";
+            $emailTemplate = $this->getUsernameRecoveryTemplate($username, $loginLink);
+            
+            $this->mail->Body = $emailTemplate;
+            $this->mail->AltBody = "Username Recovery\n\nHello,\n\nYour CWD AquaSense username is: $username\n\nYou can now log in using this username and your password.\n\nLogin here: $loginLink\n\nIf you have any questions, please contact our support team at support@calambawd.gov.ph.\n\nBest regards,\nCWD AquaSense Team";
+            
+            $this->mail->send();
+            return true;
+            
+        } catch (Exception $e) {
+            error_log("Username recovery email failed: " . $this->mail->ErrorInfo);
+            return false;
+        }
+    }
     
     public function sendWelcomeEmail($to, $username) {
         try {
@@ -176,6 +198,93 @@ class EmailService {
             </div>
             <p><small>This link will expire in 1 hour for security reasons.</small></p>
             <p>If you did not request a password reset, please ignore this email or contact our support team at <a href="mailto:support@calambawd.gov.ph">support@calambawd.gov.ph</a>.</p>
+        </div>
+        <div class="footer">
+            <p><strong>Need Assistance?</strong> Reach out to Calamba Water District Support<br>
+                <a href="mailto:calambawaterdistrict@yahoo.com">calambawaterdistrict@yahoo.com</a> | (049) 545-2863
+            </p>
+            <p>© 2025 Calamba Water District. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+    }
+
+    private function getUsernameRecoveryTemplate($username, $loginLink) {
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Username Recovery - CWD AquaSense</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.5; color: #1F2937; background-color: #F3F4F6; }
+        .container { max-width: 600px; margin: 20px auto; background: #FFFFFF; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: #1E40AF; color: #FFFFFF; padding: 24px; text-align: center; }
+        .header img { max-width: 48px; height: auto; margin-bottom: 12px; }
+        .header h1 { font-size: 24px; font-weight: 600; margin: 0; }
+        .content { padding: 32px; }
+        .content h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; }
+        .content p { margin-bottom: 16px; font-size: 16px; color: #4B5563; }
+        .button {
+            display: inline-block;
+            padding: 14px 28px;
+            background: #10B981;
+            color: #FFFFFF !important;
+            text-decoration: none !important;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 16px;
+            letter-spacing: 0.3px;
+            line-height: 1;
+            box-shadow: 0 6px 14px rgba(16, 185, 129, 0.25);
+            border: 0;
+        }
+        .button:hover { background: #059669; }
+        .highlight {
+            background: #F0FDF4;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            border-left: 5px solid #10B981;
+            color: #065F46;
+        }
+        .credentials { background: #F0FDF4; padding: 16px; border-radius: 8px; margin: 16px 0; border-left: 5px solid #10B981; }
+        .credentials ul { list-style: none; padding: 0; }
+        .credentials li { margin-bottom: 8px; }
+        .credentials code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #374151; font-family: monospace; }
+        .footer { background: #F9FAFB; padding: 24px; text-align: center; font-size: 14px; color: #6B7280; }
+        .footer a { color: #1E40AF; text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        @media (max-width: 600px) {
+            .container { margin: 10px; }
+            .content { padding: 20px; }
+            .header { padding: 20px; }
+            .header h1 { font-size: 20px; }
+            .button { padding: 10px 20px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://scontent.fmnl30-2.fna.fbcdn.net/v/t39.30808-6/558176218_1569224014514651_1613141673135955719_n.jpg?_nc_cat=110&ccb=1-7&_nc_sid=127cfc&_nc_eui2=AeEwXwZ3wT3zsxY0OFgxTkT9D1SPqxuJhVAPVI-rG4mFUKP0RkOPF4f1npcofVT6e7mp6LB88Le_HOJW6j8oEn-w&_nc_ohc=wNZ1whyV8VcQ7kNvwEhkpU9&_nc_oc=AdkC920K3XgJor2ljRHplmSZIwIN0Hiy0aJn1OqEfktz-QQDTAGhL7KdtF93Al2jQ7w&_nc_zt=23&_nc_ht=scontent.fmnl30-2.fna&_nc_gid=mtMoLIMPvbWCiMcIfBYykQ&oh=00_Affd5DFg3d_9BC0mEbQOjqI1gcyZFmEn5JJIp9dP6jtnlw&oe=68EC261D" alt="CWD AquaSense Logo">
+            <h1>Username Recovery</h1>
+        </div>
+        <div class="content">
+            <h2>Hi there Customer,</h2>
+            <p>We received a request to recover your username for your CWD AquaSense account.</p>
+            <div class="highlight">
+                <p><strong>Your username:</strong> <code>$username</code></p>
+            </div>
+            <p>Use this username along with your password to log in.</p>
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="$loginLink" class="button">Go to Sign In</a>
+            </div>
+            <p>If you did not request this, please ignore this email or contact our support team at <a href="mailto:support@calambawd.gov.ph">support@calambawd.gov.ph</a>.</p>
         </div>
         <div class="footer">
             <p><strong>Need Assistance?</strong> Reach out to Calamba Water District Support<br>

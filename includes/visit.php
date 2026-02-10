@@ -34,7 +34,7 @@
                         <i class="fas fa-envelope-open-text text-yellow-500 text-2xl mt-1 mr-4"></i>
                         <div>
                             <p class="font-bold uppercase tracking-wider text-sm text-blue-200">Email Address</p>
-                            <p class="text-lg">aquasensechatgpt@gmail.com</p>
+                            <p class="text-lg">info@cwd.com.ph</p>
                         </div>
                     </div>
                 </div>

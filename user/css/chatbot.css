@@ -118,11 +118,10 @@ main {
 }
 
 /* ========================================
-   WELCOME SCREEN - CLEAN & MINIMALIST
+   WELCOME SCREEN - WITH IMAGE/GIF BACKGROUND
    ======================================== */
 .welcome-container {
     height: calc(100vh - 8rem);
-    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -133,33 +132,67 @@ main {
     border-radius: 1.5rem;
     box-shadow: 0 20px 40px rgba(6, 182, 212, 0.15);
     padding: 2rem;
+
+    
+    background-image: url('https://scontent.fmnl30-2.fna.fbcdn.net/v/t39.30808-6/588475310_1361410452451425_4760131708210767760_n.jpg?_nc_cat=100&ccb=1-7&_nc_sid=86c6b0&_nc_eui2=AeEQLSrUDnQuYZx9DYoU8S6HBc-zQJz2iM8Fz7NAnPaIz7kKJNW7WUFP_aDn75wbRLdpzTyPbMWGewUbS03GqaoE&_nc_ohc=a0tr7R2NWCgQ7kNvwH1RQRG&_nc_oc=AdlkkXk5z5LdzbwFbQ8qrQRoqQmVmDu5nyJA4HLuUWBkweZj2s4sZrrhGBP8eqDhch0&_nc_zt=23&_nc_ht=scontent.fmnl30-2.fna&_nc_gid=fs3AaBeYcawBQeWMmpgaSg&oh=00_AfpBQYRV51t2BzNR9XrAfo46rCegf35O3R25ayFjuO66SQ&oe=69828346');
+
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+
+    /* Fallback color kung hindi mag-load ang image */
+    background-color: #e0f7fa;
 }
+
+/* Semi-transparent overlay para readable pa rin ang text, button at video */
 .welcome-container::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: radial-gradient(circle at 20% 80%, rgba(6, 182, 212, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+    inset: 0;
+    background: rgba(255, 255, 255, 0.40);   /* 0.40 = 40% white → adjustable */
+    /* Kung masyadong madilim ang image → dagdagan (0.50–0.70) */
+    /* Kung masyadong maliwanag → babaan (0.20–0.35) */
     pointer-events: none;
+    z-index: 0;
+    border-radius: 1.5rem;
 }
+
+/* Optional subtle radial glow para sa "tubig" feel (pwede tanggalin kung ayaw mo) */
+.welcome-container::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 20% 80%, rgba(6, 182, 212, 0.12) 0%, transparent 60%),
+                radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.10) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Lahat ng visible content dapat nasa ibabaw ng overlay */
+.welcome-subtitle,
+.character-section,
+.start-btn,
+.developed-by {
+    position: relative;
+    z-index: 1;
+}
+
 .welcome-subtitle {
     font-size: 1.125rem;
     color: #0c4a6e;
     font-weight: 500;
     margin-bottom: 1rem;
-    z-index: 1;
-    position: relative;
     opacity: 0.9;
 }
+
 .character-section {
     display: flex;
     flex-direction: column;
     align-items: center;
     margin: 2rem 0;
-    z-index: 1;
-    position: relative;
     margin-top: 0;
 }
+
 .character-img {
     width: 280px;
     height: 360px;
@@ -172,12 +205,14 @@ main {
     overflow: hidden;
     border: none;
 }
+
 .character-img video {
     width: 100%;
     height: 100%;
     object-fit: contain;
     border-radius: 0;
 }
+
 .start-btn {
     background: transparent;
     color: #1d4ed8;
@@ -188,20 +223,69 @@ main {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1;
-    position: relative;
     letter-spacing: 0.025em;
     text-transform: none;
     margin-top: -1.5rem;
 }
+
 .start-btn:hover {
     background: #3b82f6;
     color: white;
     border-color: transparent;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
 }
+
 .start-btn:active {
     transform: translateY(0);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
 }
+
+/* Tooltip (pinanatili) */
+.start-btn::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 0.6rem 1.1rem;
+    border-radius: 0.6rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.2s ease;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.28);
+    z-index: 30;
+}
+
+.start-btn:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.start-btn::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(6px);
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 7px solid #0f172a;
+    opacity: 0;
+    transition: all 0.2s ease;
+    z-index: 30;
+}
+
+.start-btn:hover::before {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 .developed-by {
     position: absolute;
     bottom: 1.5rem;
@@ -214,6 +298,7 @@ main {
     align-items: center;
     font-weight: 500;
 }
+
 .developed-by img {
     width: 16px;
     height: 16px;
@@ -235,6 +320,8 @@ main {
     overflow: hidden;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
 }
+
+/* Lahat ng natitirang styles mo (chat, complaint card, etc.) ay hindi binago */
 .chat-header {
     background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
     color: #fff;

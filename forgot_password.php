@@ -15,6 +15,9 @@ if (isset($_SESSION['LAST_ACTIVITY']) && (time() - $_SESSION['LAST_ACTIVITY']) >
 }
 $_SESSION['LAST_ACTIVITY'] = time();
 
+// FIX: Set timezone to Manila for consistent date/time handling
+date_default_timezone_set('Asia/Manila');
+
 $error = '';
 $success = '';
 

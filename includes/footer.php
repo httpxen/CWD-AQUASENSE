@@ -45,7 +45,7 @@
                     </li>
                     <li class="flex items-center">
                         <i class="fas fa-envelope text-blue-600 mr-3 text-sm w-4"></i>
-                        <span>aquasensechatgpt@gmail.com</span>
+                        <span>info@cwd.com.ph</span>
                     </li>
                 </ul>
             </div>

@@ -389,8 +389,29 @@ CREATE TABLE `service_remarks` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- NEW TABLE FOR VIOLATIONS AND PENALTIES (from UPDATE script)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `violations_penalties` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `offense` VARCHAR(255) NOT NULL COMMENT 'Main offense e.g., Illegal Transfer of Meter',
+  `sub_offense` VARCHAR(255) DEFAULT NULL COMMENT 'Sub-type for Meter Tampering',
+  `residential_1st` DECIMAL(10,2) NOT NULL,
+  `residential_2nd` DECIMAL(10,2) NOT NULL,
+  `residential_3rd` DECIMAL(10,2) NOT NULL,
+  `commercial_1st` DECIMAL(10,2) NOT NULL,
+  `commercial_2nd` DECIMAL(10,2) NOT NULL,
+  `commercial_3rd` DECIMAL(10,2) NOT NULL,
+  `notes` TEXT DEFAULT NULL COMMENT 'e.g., *(After Disconnection)',
+  `service_id` INT(11) DEFAULT NULL COMMENT 'Link to citizen_charter_services (13 for penalties)',
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `service_id` (`service_id`),
+  CONSTRAINT `violations_penalties_ibfk_1` FOREIGN KEY (`service_id`) REFERENCES `citizen_charter_services` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
 -- FULL INSERTS PARA SA CITIZEN'S CHARTER SERVICES
--- (12 Services mula sa HTML)
+-- (12 Services mula sa HTML + Category B rates + Service 13 + Violations data)
 -- --------------------------------------------------------
 
 -- Service 1: Application for Estimate
@@ -527,7 +548,7 @@ INSERT INTO `service_procedures` (`service_id`, `step_number`, `description`, `p
 (6, 1, 'Get a queuing ticket from the Lobby Guard for Public Assistance Location: Lobby', '1 minute', 0, 'Guard on Duty; Security Services', 'Lobby'),
 (6, 2, 'Payment of Water Bill Location: Customer Accounts Division (Lobby)', '15 minutes', NULL, 'Customer Accounts Division (Window 1 and 2)', 'Customer Accounts Division (Lobby)');
 
--- Rate Schedule as Fees
+-- Rate Schedule as Fees (Category A - Original)
 INSERT INTO `service_fees` (`service_id`, `fee_category`, `particular`, `amount`) VALUES
 (6, 'List of Formula (Residential/Government)', '1/2" Minimum Charge (1-10 m³)', 183.00),
 (6, 'List of Formula (Residential/Government)', '1/2" 11-20 m³ (per m³)', 20.30),
@@ -555,9 +576,48 @@ INSERT INTO `service_fees` (`service_id`, `fee_category`, `particular`, `amount`
 (6, 'List of Formula (Residential/Government)', '2" 31-40 m³ (per m³)', 30.80),
 (6, 'List of Formula (Residential/Government)', '2" 41+ m³ (per m³)', 36.45);
 
+-- Category B rates added here (from UPDATE script - after Category A)
+INSERT INTO `service_fees` (`service_id`, `fee_category`, `particular`, `amount`) VALUES
+-- 1/2"
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1/2" Minimum Charge (1-10 m³)', 183.00),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1/2" 11-20 m³ (per m³)', 16.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1/2" 21-30 m³ (per m³)', 19.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1/2" 31-40 m³ (per m³)', 24.60),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1/2" 41+ m³ (per m³)', 29.20),
+
+-- 3/4"
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '3/4" Minimum Charge (1-10 m³)', 292.80),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '3/4" 11-20 m³ (per m³)', 16.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '3/4" 21-30 m³ (per m³)', 19.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '3/4" 31-40 m³ (per m³)', 24.60),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '3/4" 41+ m³ (per m³)', 29.20),
+
+-- 1"
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1" Minimum Charge (1-10 m³)', 585.60),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1" 11-20 m³ (per m³)', 16.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1" 21-30 m³ (per m³)', 19.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1" 31-40 m³ (per m³)', 24.60),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1" 41+ m³ (per m³)', 29.20),
+
+-- 1 1/2"
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1 1/2" Minimum Charge (1-10 m³)', 1464.00),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1 1/2" 11-20 m³ (per m³)', 16.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1 1/2" 21-30 m³ (per m³)', 19.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1 1/2" 31-40 m³ (per m³)', 24.60),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '1 1/2" 41+ m³ (per m³)', 29.20),
+
+-- 2"
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '2" Minimum Charge (1-10 m³)', 3660.00),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '2" 11-20 m³ (per m³)', 16.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '2" 21-30 m³ (per m³)', 19.20),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '2" 31-40 m³ (per m³)', 24.60),
+(6, 'List of Formula (NHA, VLP, VPB, Major Homes)', '2" 41+ m³ (per m³)', 29.20);
+
+-- Remarks for Service 6 (original + updated comprehensive one)
 INSERT INTO `service_remarks` (`service_id`, `remark`) VALUES
 (6, 'Only residential monthly consumptions not exceeding 30 cubic meters may avail 5% discount under RA 9994.'),
-(6, 'The discount may be availed through over the counter payment at Calamba Water District Main Office and Extension Offices at Canlubang and Mercado De Calamba.');
+(6, 'The discount may be availed through over the counter payment at Calamba Water District Main Office and Extension Offices at Canlubang and Mercado De Calamba.'),
+(6, 'Category A: Service Areas (Residential/Government). Category B: NHA, VLP, VPB, Major Homes (lower commodity rates apply). Only residential monthly consumptions not exceeding 30 cubic meters may avail 5% discount under RA 9994. The discount may be availed through over the counter payment at Calamba Water District Main Office and Extension Offices at Canlubang and Mercado De Calamba.');
 
 -- Service 7: Request for Change of Name
 INSERT INTO `citizen_charter_services` (`slug`, `sidebar_title`, `main_title`, `subtitle`, `transaction_type`, `total_time`, `total_fee`) VALUES
@@ -677,5 +737,31 @@ INSERT INTO `service_procedures` (`service_id`, `step_number`, `description`, `p
 
 INSERT INTO `service_remarks` (`service_id`, `remark`) VALUES
 (12, 'For detailed procedures, fees, and scheduling, please visit the One-Stop-Shop or contact Customer Care Division.');
+
+-- Service 13: Violations and Penalties (new from UPDATE script)
+INSERT INTO `citizen_charter_services` (`slug`, `sidebar_title`, `main_title`, `subtitle`, `transaction_type`, `total_time`, `total_fee`, `description`) VALUES
+('violations-penalties', 'Violations and Penalties', 'Schedule of Violations and Penalties', '(Reference Only - No Fee)', 'Simple', 'N/A', 0.00, 'As per Calamba Water District Policies. Effective Date: Latest verified from official sources.');
+
+-- Insert data for Violations and Penalties (exact match sa HTML mo)
+-- service_id = 13 (new one above)
+INSERT INTO `violations_penalties` (`offense`, `sub_offense`, `residential_1st`, `residential_2nd`, `residential_3rd`, `commercial_1st`, `commercial_2nd`, `commercial_3rd`, `notes`, `service_id`) VALUES
+-- General offenses
+('Illegal Transfer of Meter', NULL, 2000.00, 4000.00, 8000.00, 4000.00, 8000.00, 16000.00, NULL, 13),
+('Illegal Tapping of Meter', NULL, 6000.00, 12000.00, 18000.00, 12000.00, 24000.00, 36000.00, '*(After Disconnection)', 13),
+('Tapping of Meter Seal', NULL, 6000.00, 12000.00, 18000.00, 12000.00, 24000.00, 36000.00, '*(After Disconnection)', 13),
+('Padlock Tampering', NULL, 6000.00, 12000.00, 18000.00, 12000.00, 24000.00, 36000.00, '*(After Disconnection)', 13),
+
+-- Meter Tampering sub-types
+('Meter Tampering', 'Cutting off vane wheel', 6000.00, 12000.00, 18000.00, 12000.00, 24000.00, 36000.00, NULL, 13),
+('Meter Tampering', 'Magnet Installation', 6000.00, 8000.00, 12000.00, 12000.00, 16000.00, 24000.00, NULL, 13),
+('Meter Tampering', 'Pin insertion from lens to indicating star', 6000.00, 12000.00, 18000.00, 12000.00, 24000.00, 36000.00, NULL, 13),
+('Meter Tampering', 'Wire insertion from tailpiece to vane wheel', 6000.00, 12000.00, 18000.00, 12000.00, 24000.00, 36000.00, NULL, 13),
+('Meter Tampering', 'By-pass Connection', 12000.00, 24000.00, 36000.00, 24000.00, 48000.00, 72000.00, NULL, 13),
+('Meter Tampering', 'Inverted Meter', 12000.00, 24000.00, 36000.00, 24000.00, 48000.00, 72000.00, NULL, 13),
+('Meter Tampering', 'Illegal Tapping', 12000.00, 24000.00, 36000.00, 24000.00, 48000.00, 72000.00, NULL, 13);
+
+-- Optional: Add remarks/disclaimer for the new service (link to service_id 13)
+INSERT INTO `service_remarks` (`service_id`, `remark`) VALUES
+(13, 'These penalties are subject to enforcement policies and may be adjusted based on national government mandates. For official inquiries or concerns, please coordinate with the Calamba Water District Enforcement Department. Last verified: As per official CWD website.');
 
 COMMIT;

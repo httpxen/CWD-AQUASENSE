@@ -1,7 +1,10 @@
 <?php
+// Set Philippine timezone sa pinaka-una (Hostinger default UTC kaya kailangan 'to)
+date_default_timezone_set('Asia/Manila');
+
 include 'session_check.php'; // Handles DB, session validation, timeout, and updates STAFF_LAST_ACTIVITY
 
-// Get staff_id from session (assuming set during login)
+// Get staff_id from session
 $staff_id = $_SESSION['staff_id'] ?? null;
 if (!$staff_id) {
     header("Location: ../admin_login.php?message=Please log in as admin.");
@@ -160,7 +163,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $stmt = mysqli_prepare($conn, $staff_query);
     $staff_list = [];
     if ($stmt) {
-        // Fix for passing by reference
         $bind_params = [$stmt, $params_types];
         foreach ($full_params as $key => $value) {
             $bind_params[] =& $full_params[$key];
@@ -198,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // ---------------------------
-// Fetch staff with pagination, search, and filters
+// Fetch staff with pagination, search, and filters (main page load)
 // ---------------------------
 $per_page = 10;
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -225,7 +227,7 @@ if ($status_filter !== 'all') {
 }
 $where_clause = !empty($where_conditions) ? 'WHERE ' . implode(' AND ', $where_conditions) : '';
 
-// Staff query - ONLINE/OFFLINE STATUS LOGIC with role-based ordering
+// Staff query
 $staff_query = "
     SELECT 
         staff_id, name, 
@@ -251,7 +253,6 @@ $params_types = str_repeat('s', count($where_params)) . 'ii';
 $stmt = mysqli_prepare($conn, $staff_query);
 $staff_list = [];
 if ($stmt) {
-    // Fix for passing by reference
     $bind_params = [$stmt, $params_types];
     foreach ($full_params as $key => $value) {
         $bind_params[] =& $full_params[$key];
@@ -272,7 +273,6 @@ $total_staff = 0;
 if ($stmt_total) {
     if (!empty($where_params)) {
         $types_count = str_repeat('s', count($where_params));
-        // Fix for passing by reference
         $bind_params_count = [$stmt_total, $types_count];
         foreach ($where_params as $key => $value) {
             $bind_params_count[] =& $where_params[$key];
@@ -292,7 +292,7 @@ $total_pages = ceil($total_staff / $per_page);
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Manage Staff | CWD AquaSense Admin</title>
+    <title>View Staff | CWD AquaSense Admin</title>
     <link rel="icon" type="image/png" href="../assets/icons/AquaSense2.png" />
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -331,13 +331,13 @@ $total_pages = ceil($total_staff / $per_page);
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
                         </svg>
-                        Manage Staff
+                        View Staff
                     </a>
                     <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
                         </svg>
-                        Manage Users
+                        View Users
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
@@ -413,7 +413,7 @@ $total_pages = ceil($total_staff / $per_page);
                 <!-- Staff Table -->
                 <div class="card p-6">
                     <div class="flex flex-col md:flex-row justify-between items-center mb-6">
-                        <h2 class="text-lg font-semibold text-gray-900">Manage Staff</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">View Staff</h2>
                         <div class="flex items-center space-x-2 mt-4 md:mt-0">
                             <form id="searchForm" action="" method="GET" class="flex items-center space-x-2">
                                 <input type="hidden" name="page" value="1">
@@ -656,12 +656,15 @@ $total_pages = ceil($total_staff / $per_page);
         }
 
         function formatDate(dateStr) {
-            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            if (!dateStr) return '—';
+            const date = new Date(dateStr + 'Z'); // Treat as UTC from DB
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
         function formatDateTime(dateStr) {
             if (!dateStr) return 'Never';
-            return new Date(dateStr).toLocaleDateString('en-US', { 
+            const date = new Date(dateStr + 'Z'); // Treat as UTC from DB
+            return date.toLocaleString('en-US', { 
                 month: 'short', 
                 day: 'numeric', 
                 year: 'numeric', 
@@ -671,7 +674,7 @@ $total_pages = ceil($total_staff / $per_page);
             });
         }
 
-        // View functionality (extracted to function for reuse)
+        // View functionality
         async function loadStaffDetails(id) {
             const formData = new FormData();
             formData.append('action', 'get_staff');
@@ -743,10 +746,10 @@ $total_pages = ceil($total_staff / $per_page);
             }
         }
 
-        // Initial event listeners for view buttons
+        // Event delegation for view buttons (since table can be refreshed)
         document.addEventListener('click', (e) => {
-            if (e.target.closest('.view-btn')) {
-                const btn = e.target.closest('.view-btn');
+            const btn = e.target.closest('.view-btn');
+            if (btn) {
                 const id = btn.dataset.id;
                 loadStaffDetails(id);
             }
@@ -761,7 +764,6 @@ $total_pages = ceil($total_staff / $per_page);
             document.getElementById('viewModal').classList.add('hidden');
         });
 
-        // Close modal on outside click
         document.getElementById('viewModal').addEventListener('click', (e) => {
             if (e.target.id === 'viewModal') {
                 document.getElementById('viewModal').classList.add('hidden');
@@ -770,7 +772,7 @@ $total_pages = ceil($total_staff / $per_page);
 
         // Heartbeat to update own activity every 30 seconds
         setInterval(() => {
-            fetch('manage_staff.php', {
+            fetch('', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: `action=update_activity&csrf_token=${csrfToken}`
@@ -830,4 +832,6 @@ $total_pages = ceil($total_staff / $per_page);
 </body>
 </html>
 
-<?php mysqli_close($conn); ?>
+<?php
+mysqli_close($conn);
+?>
