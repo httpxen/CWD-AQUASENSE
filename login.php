@@ -311,6 +311,69 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     .group:focus-within .svg-icon { color: #3b82f6; }
     .password-toggle { cursor: pointer; transition: color .2s; }
     .password-toggle:hover { color: #3b82f6; }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 50;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.5);
+      backdrop-filter: blur(5px);
+    }
+    .modal-content {
+      background-color: #fefefe;
+      margin: 10% auto;
+      padding: 0;
+      border: none;
+      width: 90%;
+      max-width: 400px;
+      border-radius: 1rem;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      animation: fadeInUp 0.3s ease-out;
+    }
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 1rem;
+    }
+    .close:hover {
+      color: #000;
+    }
+    .recovery-option {
+      transition: all 0.2s ease;
+      border: 2px solid #e5e7eb;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: white;
+      display: block;
+      text-decoration: none;
+      color: inherit;
+    }
+    .recovery-option:hover {
+      border-color: #3b82f6;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(59, 130, 246, 0.15);
+    }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -444,14 +507,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <input id="remember" name="remember" type="checkbox" class="h-4 w-4 text-blue-600 border-2 border-gray-300 rounded focus:ring-blue-500">
               <label for="remember" class="ml-2 block text-sm text-gray-700">Remember me</label>
             </div>
-            <div class="text-sm flex items-center">
-              <a href="forgot_password.php" class="font-medium text-red-600 hover:text-red-500 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
-                </svg>
-                Forgot password?
-              </a>
-            </div>
           </div>
 
           <div class="mt-5">
@@ -466,6 +521,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </button>
           </div>
         </form>
+
+        <!-- Account Recovery Button -->
+        <div class="mt-6 text-center">
+          <button
+            onclick="openRecoveryModal()"
+            class="w-full inline-flex justify-center items-center py-3 px-6 border-2 border-blue-200 rounded-xl shadow-sm bg-gradient-to-r from-blue-50 to-indigo-50 text-sm font-bold text-gray-700 hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 group"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-2 text-blue-600 group-hover:text-blue-700 transition-colors">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12a7.5 7.5 0 0 0 15 0m-15 0a7.5 7.5 0 1 1 15 0m-15 0H3m16.5 0H21m-1.5 0H12m-8.457 3.077 1.41-.513m14.095-5.13 1.41-.513M5.106 17.785l1.15-.964m11.49-9.642 1.149-.964M7.501 19.795l.75-1.3m7.5-12.99.75-1.3m-6.063 16.658.26-1.477m2.605-14.772.26-1.477m0 17.726-.26-1.477M10.698 4.614l-.26-1.477M16.5 19.794l-.75-1.299M7.5 4.205 12 12m6.894 5.785-1.149-.964M6.256 7.178l-1.15-.964m15.352 8.864-1.41-.513M4.954 9.435l-1.41-.514M12.002 12l-3.75 6.495" />
+            </svg>
+            <span>Account Recovery</span>
+          </button>
+        </div>
 
         <div class="mt-6 relative">
           <div class="absolute inset-0 flex items-center">
@@ -490,6 +558,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           <span class="font-medium">Protected by</span> Calamba Water District Security
         </p>
         <p class="text-xs text-gray-400 mt-1">© 2025 CWD AquaSense</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Recovery Modal -->
+  <div id="recoveryModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeRecoveryModal()">&times;</span>
+      <div class="py-6 px-6">
+        <div class="text-center mb-6">
+          <h2 class="text-xl font-bold text-gray-900 mb-2">Account Recovery</h2>
+          <p class="text-sm text-gray-600">Select what you need help with:</p>
+        </div>
+        <div class="space-y-4">
+          <a href="forgot_username.php" class="recovery-option" onclick="closeRecoveryModal()">
+            <i class="fas fa-user text-2xl text-gray-500 mb-2 block"></i>
+            <h3 class="font-semibold text-gray-900">Forgot Username</h3>
+            <p class="text-sm text-gray-500 mt-1">Enter your email to recover your username.</p>
+          </a>
+          <a href="forgot_password.php" class="recovery-option" onclick="closeRecoveryModal()">
+            <i class="fas fa-key text-2xl text-gray-500 mb-2 block"></i>
+            <h3 class="font-semibold text-gray-900">Forgot Password</h3>
+            <p class="text-sm text-gray-500 mt-1">Reset your password via email.</p>
+          </a>
+        </div>
       </div>
     </div>
   </div>
@@ -528,6 +621,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       const hidePath = `M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88`;
 
       icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="${isPassword ? showPath : hidePath}" />`;
+    }
+
+    // Modal Functions
+    function openRecoveryModal() {
+      document.getElementById('recoveryModal').style.display = 'block';
+    }
+
+    function closeRecoveryModal() {
+      document.getElementById('recoveryModal').style.display = 'none';
+    }
+
+    // Close modal on outside click
+    window.onclick = function(event) {
+      const modal = document.getElementById('recoveryModal');
+      if (event.target == modal) {
+        closeRecoveryModal();
+      }
     }
   </script>
 </body>

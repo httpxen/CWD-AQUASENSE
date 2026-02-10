@@ -1,4 +1,7 @@
 <?php
+// IMPORTANT: Set PH timezone FIRST para tama ang lahat ng date handling
+date_default_timezone_set('Asia/Manila');
+
 include 'session_check.php';
 
 // ---------------------------
@@ -41,7 +44,7 @@ function get_avatar_src($profile_picture, $name) {
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
 
-// ADD THIS FUNCTION: Format E.164 → Pretty Display
+// Format E.164 → Pretty Display
 function formatPhoneDisplay($e164) {
     if (!$e164) return '—';
     return preg_replace('/^\+63(\d{3})(\d{3})(\d{4})$/', '+63 $1 $2 $3', $e164);
@@ -100,41 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // ---------------------------
-// Handle user deletion
-// ---------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_user') {
-    if (!hash_equals($csrf_token, $_POST['csrf_token'] ?? '')) {
-        $msg = 'Invalid CSRF token.';
-        $success = false;
-    } else {
-        $user_id = (int)($_POST['user_id'] ?? 0);
-        if ($user_id <= 0) {
-            $msg = 'Invalid user ID.';
-            $success = false;
-        } else {
-            $delete_query = "DELETE FROM users WHERE id = ?";
-            $stmt = mysqli_prepare($conn, $delete_query);
-            mysqli_stmt_bind_param($stmt, "i", $user_id);
-            if (mysqli_stmt_execute($stmt)) {
-                $msg = 'User deleted successfully.';
-                $success = true;
-            } else {
-                $msg = 'Failed to delete user.';
-                $success = false;
-            }
-            mysqli_stmt_close($stmt);
-        }
-    }
-    if (isset($_POST['is_ajax'])) {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => $success, 'message' => $msg]);
-        exit;
-    } else {
-        $alerts[] = ['type' => $success ? 'success' : 'error', 'msg' => $msg];
-    }
-}
-
-// ---------------------------
 // Fetch users with pagination and search
 // ---------------------------
 $per_page = 10;
@@ -151,7 +119,7 @@ if ($search !== '') {
     $search_params = [$like, $like, $like, $like, $like];
 }
 
-// Users query - UPDATED STATUS LOGIC
+// Users query
 $users_query = "
     SELECT 
         id, username, 
@@ -203,7 +171,7 @@ mysqli_stmt_close($stmt);
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Manage Users | CWD AquaSense Admin</title>
+    <title>View Users | CWD AquaSense Admin</title>
     <link rel="icon" type="image/png" href="../assets/icons/AquaSense2.png" />
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
@@ -242,13 +210,13 @@ mysqli_stmt_close($stmt);
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
                         </svg>
-                        Manage Staff
+                        View Staff
                     </a>
                     <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 border border-blue-200 transition duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a2.375 2.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
                         </svg>
-                        Manage Users
+                        View Users
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
@@ -324,7 +292,7 @@ mysqli_stmt_close($stmt);
                 <!-- Users Table -->
                 <div class="card p-6">
                     <div class="flex flex-col md:flex-row justify-between items-center mb-6">
-                        <h2 class="text-lg font-semibold text-gray-900">Manage Users</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">View Users</h2>
                         <div class="flex items-center space-x-4 mt-4 md:mt-0">
                             <form id="searchForm" action="" method="GET" class="relative flex items-center">
                                 <input type="hidden" name="page" value="1">
@@ -354,7 +322,7 @@ mysqli_stmt_close($stmt);
                                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact Number</th>
                                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Registered</th>
-                                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
@@ -388,12 +356,9 @@ mysqli_stmt_close($stmt);
                                             <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 <?php echo date('M j, Y', strtotime($user['created_at'])); ?>
                                             </td>
-                                            <td class="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <button class="view-btn text-blue-600 hover:text-blue-900 mr-3" data-id="<?php echo $user['id']; ?>" title="View Details">
+                                            <td class="px-3 py-4 whitespace-nowrap text-center text-sm font-medium">
+                                                <button class="view-btn text-blue-600 hover:text-blue-900" data-id="<?php echo $user['id']; ?>" title="View Details">
                                                     <i class="fas fa-eye"></i>
-                                                </button>
-                                                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?php echo $user['id']; ?>" title="Delete User">
-                                                    <i class="fas fa-trash"></i>
                                                 </button>
                                             </td>
                                         </tr>
@@ -452,7 +417,7 @@ mysqli_stmt_close($stmt);
         <i class="fas fa-bars text-lg"></i>
     </button>
 
-    <!-- Profile Dropdown -->
+    <!-- Profile Dropdown Menu (populated by JS) -->
     <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -553,11 +518,15 @@ mysqli_stmt_close($stmt);
         }
 
         function formatDate(dateStr) {
-            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            if (!dateStr) return '—';
+            const date = new Date(dateStr + 'Z'); // Treat as UTC
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
         function formatDateTime(dateStr) {
-            return new Date(dateStr).toLocaleDateString('en-US', { 
+            if (!dateStr) return 'Never';
+            const date = new Date(dateStr + 'Z'); // Treat as UTC
+            return date.toLocaleString('en-US', { 
                 month: 'short', 
                 day: 'numeric', 
                 year: 'numeric', 
@@ -617,7 +586,6 @@ mysqli_stmt_close($stmt);
                                             <p class="text-sm text-gray-900">${formatDate(user.created_at)}</p>
                                         </div>
                                     </div>
-                                    ${user.last_login ? `
                                     <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
                                         <i class="fas fa-clock text-orange-500 w-5 flex-shrink-0"></i>
                                         <div class="min-w-0 flex-1">
@@ -625,15 +593,6 @@ mysqli_stmt_close($stmt);
                                             <p class="text-sm text-gray-900">${formatDateTime(user.last_login)}</p>
                                         </div>
                                     </div>
-                                    ` : `
-                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                                        <i class="fas fa-clock text-gray-400 w-5 flex-shrink-0"></i>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Login</p>
-                                            <p class="text-sm text-gray-500 italic">Never</p>
-                                        </div>
-                                    </div>
-                                    `}
                                 </div>
                             </div>
                         `;
@@ -657,48 +616,10 @@ mysqli_stmt_close($stmt);
             document.getElementById('viewModal').classList.add('hidden');
         });
 
-        // Close modal on outside click
         document.getElementById('viewModal').addEventListener('click', (e) => {
             if (e.target.id === 'viewModal') {
                 document.getElementById('viewModal').classList.add('hidden');
             }
-        });
-
-        // Delete functionality
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.preventDefault();
-                const id = btn.dataset.id;
-                const result = await Swal.fire({
-                    title: 'Are you sure?',
-                    text: 'This cannot be undone!',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#3b82f6',
-                    cancelButtonColor: '#d33',
-                    confirmButtonText: 'Yes, delete it!'
-                });
-                if (result.isConfirmed) {
-                    const formData = new URLSearchParams();
-                    formData.append('action', 'delete_user');
-                    formData.append('user_id', id);
-                    formData.append('csrf_token', '<?php echo $csrf_token; ?>');
-                    formData.append('is_ajax', '1');
-                    try {
-                        const res = await fetch('', { method: 'POST', body: formData });
-                        const data = await res.json();
-                        if (data.success) {
-                            Swal.fire('Deleted!', 'User has been deleted.', 'success').then(() => {
-                                location.reload();
-                            });
-                        } else {
-                            Swal.fire('Error!', data.message, 'error');
-                        }
-                    } catch (err) {
-                        Swal.fire('Error!', 'Failed to delete user', 'error');
-                    }
-                }
-            });
         });
     </script>
 </body>

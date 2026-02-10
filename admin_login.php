@@ -248,7 +248,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             Calamba Water District
           </h1>
           <p class="text-base font-semibold text-blue-600 sm:text-lg">
-                Admin Portal - AquaSense
+                Employee/Admin Portal - AquaSense
           </p>
         </div>
       </div>
@@ -350,7 +350,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
               <span class="absolute left-4">
                 <i class="fas fa-arrow-right text-blue-100 group-hover:text-white transition-colors text-sm"></i>
               </span>
-              <span class="relative">Admin Sign In</span>
+              <span class="relative">Sign In</span>
             </button>
           </div>
         </form>

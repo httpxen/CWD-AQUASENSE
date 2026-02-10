@@ -2,18 +2,75 @@
 document.getElementById('mobile-menu-btn').addEventListener('click', function() {
     document.getElementById('mobile-menu').classList.toggle('hidden');
 });
-// Testimonial Carousel
-let currentSlide = 0;
-const slides = document.querySelectorAll('#testimonial-carousel > div');
-function nextTestimonial() {
+// testimonial-carousel.js
+
+document.addEventListener('DOMContentLoaded', () => {
+  const carousel = document.getElementById('testimonial-carousel');
+  
+  // Kung wala o hindi natagpuan ang carousel, tigilan na
+  if (!carousel) return;
+
+  const slides = document.querySelectorAll('#testimonial-carousel > div');
+  
+  // Kung isa lang o wala, walang saysay ang auto-slide
+  if (slides.length <= 1) return;
+
+  let currentSlide = 0;
+  const slideDuration = 5000; // 5 seconds – pwede mong baguhin
+
+  function goToSlide(index) {
+    currentSlide = index;
+    carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
+  }
+
+  function nextSlide() {
     currentSlide = (currentSlide + 1) % slides.length;
-    document.getElementById('testimonial-carousel').style.transform = `translateX(-${currentSlide * 100}%)`;
-}
-function prevTestimonial() {
-    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
-    document.getElementById('testimonial-carousel').style.transform = `translateX(-${currentSlide * 100}%)`;
-}
-setInterval(nextTestimonial, 5000);
+    goToSlide(currentSlide);
+  }
+
+  // Simulan ang auto-slide
+  let autoSlideInterval = setInterval(nextSlide, slideDuration);
+
+  // Pause kapag hinover (desktop-friendly)
+  const container = carousel.parentElement;
+
+  container.addEventListener('mouseenter', () => {
+    clearInterval(autoSlideInterval);
+  });
+
+  container.addEventListener('mouseleave', () => {
+    // Iwasan ang multiple intervals – i-clear muna bago mag-set ulit
+    clearInterval(autoSlideInterval);
+    autoSlideInterval = setInterval(nextSlide, slideDuration);
+  });
+
+  // Mobile touch/swipe support
+  let touchStartX = 0;
+  let touchEndX = 0;
+
+  container.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+  }, { passive: true });
+
+  container.addEventListener('touchend', (e) => {
+    touchEndX = e.changedTouches[0].screenX;
+
+    // Swipe left → next slide
+    if (touchStartX - touchEndX > 60) {
+      clearInterval(autoSlideInterval);
+      nextSlide();
+      autoSlideInterval = setInterval(nextSlide, slideDuration);
+    }
+    
+    // Swipe right → previous slide (optional)
+    if (touchEndX - touchStartX > 60) {
+      clearInterval(autoSlideInterval);
+      currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+      goToSlide(currentSlide);
+      autoSlideInterval = setInterval(nextSlide, slideDuration);
+    }
+  }, { passive: true });
+});
 // Smooth Scroll
 document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     anchor.addEventListener('click', function (e) {

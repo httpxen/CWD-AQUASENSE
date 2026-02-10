@@ -18,7 +18,7 @@ function sanitize($value) {
 
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) {
-        return '../' . $profile_picture; // Adjust for admin/ subfolder
+        return '../' . $profile_picture;
     }
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
@@ -44,12 +44,17 @@ if (!$staff) {
 }
 
 // ---------------------------
-// GLOBAL STATS: All Complaints (FIXED: Whitespace & Case Insensitive)
+// NOTIFICATIONS
+// ---------------------------
+include 'includes/notifications.php';
+
+// ---------------------------
+// GLOBAL STATS
 // ---------------------------
 $stats_query = "
     SELECT 
         COUNT(*) AS total_complaints,
-               SUM(CASE WHEN UPPER(TRIM(status)) = 'PENDING' THEN 1 ELSE 0 END) AS pending_complaints,
+        SUM(CASE WHEN UPPER(TRIM(status)) = 'PENDING' THEN 1 ELSE 0 END) AS pending_complaints,
         SUM(CASE WHEN UPPER(TRIM(status)) = 'IN PROGRESS' THEN 1 ELSE 0 END) AS in_progress_complaints,
         SUM(CASE WHEN UPPER(TRIM(status)) = 'RESOLVED' THEN 1 ELSE 0 END) AS resolved_complaints,
         SUM(CASE WHEN UPPER(TRIM(status)) = 'CLOSED' THEN 1 ELSE 0 END) AS closed_complaints
@@ -59,39 +64,45 @@ $stats_result = mysqli_query($conn, $stats_query);
 if (!$stats_result) die("Stats query failed: " . mysqli_error($conn));
 $stats = mysqli_fetch_assoc($stats_result);
 
-$total_complaints = $stats['total_complaints'] ?? 0;
-$pending_complaints = $stats['pending_complaints'] ?? 0;
+$total_complaints     = $stats['total_complaints'] ?? 0;
+$pending_complaints   = $stats['pending_complaints'] ?? 0;
 $in_progress_complaints = $stats['in_progress_complaints'] ?? 0;
-$resolved_complaints = $stats['resolved_complaints'] ?? 0;
-$closed_complaints = $stats['closed_complaints'] ?? 0;
+$resolved_complaints  = $stats['resolved_complaints'] ?? 0;
+$closed_complaints    = $stats['closed_complaints'] ?? 0;
 
-// Active Staff & Customers
-$total_feedback_query = "SELECT COUNT(*) as total FROM feedback";
-$total_feedback_result = mysqli_query($conn, $total_feedback_query);
-$total_feedback = mysqli_fetch_assoc($total_feedback_result)['total'] ?? 0;
+// Other counters
+$total_feedback = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM feedback"))['total'] ?? 0;
+$active_staff   = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM staff"))['total'] ?? 0;
+$total_customers = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM users"))['total'] ?? 0;
 
-$active_staff_query = "SELECT COUNT(*) as total FROM staff";
-$active_staff_result = mysqli_query($conn, $active_staff_query);
-$active_staff = mysqli_fetch_assoc($active_staff_result)['total'] ?? 0;
-
-$total_customers_query = "SELECT COUNT(*) as total FROM users";
-$total_customers_result = mysqli_query($conn, $total_customers_query);
-$total_customers = mysqli_fetch_assoc($total_customers_result)['total'] ?? 0;
-
-// Recent 5 UNRESOLVED complaints
-$recent_complaints_query = "
-    SELECT c.complaint_id, c.category, c.description, c.status, c.created_at,
-           CONCAT(COALESCE(u.first_name,''),' ',COALESCE(u.middle_name,''),' ',COALESCE(u.last_name,'')) AS user_name
+// ---------------------------
+// MY ASSIGNED COMPLAINTS (recent 10)
+// ---------------------------
+$assigned_query = "
+    SELECT 
+        c.complaint_id, 
+        c.category, 
+        c.description, 
+        c.status, 
+        c.created_at,
+        CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.middle_name,''), ' ', COALESCE(u.last_name,'')) AS user_name,
+        ca.assigned_at
     FROM complaints c
+    INNER JOIN complaint_assignments ca ON c.complaint_id = ca.complaint_id
     LEFT JOIN users u ON c.user_id = u.id
-    WHERE UPPER(TRIM(c.status)) NOT IN ('RESOLVED', 'CLOSED')
-    ORDER BY c.created_at DESC LIMIT 5
+    WHERE ca.staff_id = ?
+    ORDER BY ca.assigned_at DESC, c.created_at DESC
+    LIMIT 10
 ";
-$recent_complaints_result = mysqli_query($conn, $recent_complaints_query);
-if (!$recent_complaints_result) die("Recent complaints query failed: " . mysqli_error($conn));
-$recent_complaints = [];
-while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
-    $recent_complaints[] = $row;
+
+$assigned_stmt = mysqli_prepare($conn, $assigned_query);
+mysqli_stmt_bind_param($assigned_stmt, "i", $staff_id);
+mysqli_stmt_execute($assigned_stmt);
+$assigned_result = mysqli_stmt_get_result($assigned_stmt);
+
+$assigned_complaints = [];
+while ($row = mysqli_fetch_assoc($assigned_result)) {
+    $assigned_complaints[] = $row;
 }
 ?>
 
@@ -148,7 +159,6 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                     </div>
                 </div>
 
-                <!-- Navigation -->
                 <nav class="flex-1 py-2 px-4 space-y-2">
                     <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-blue-600 bg-blue-50 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3">
@@ -170,7 +180,6 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                     </a>
                 </nav>
 
-                <!-- Staff Info & Logout -->
                 <div class="p-4 border-t border-gray-100">
                     <div class="flex items-center space-x-3 mb-4">
                         <div class="relative avatar-glow">
@@ -192,20 +201,57 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
             </div>
         </div>
 
-        <!-- Main -->
+        <!-- Main Content -->
         <div class="flex-1">
             <header class="header-2025 sticky top-0 z-20">
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-4"></div>
                         <div class="flex items-center space-x-4">
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
 
+                            <!-- Notification -->
+                            <div class="relative" id="notificationContainer">
+                                <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
+                                    </svg>
+                                    <?php if ($new_count > 0): ?>
+                                        <div class="notification-badge"><?php echo $new_count > 99 ? '99+' : $new_count; ?></div>
+                                    <?php endif; ?>
+                                </button>
+
+                                <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden">
+                                    <div class="px-4 py-3 border-b border-gray-100">
+                                        <h3 class="text-sm font-semibold text-gray-900">New Complaints</h3>
+                                        <p class="text-xs text-gray-500"><?php echo $new_count; ?> pending since your last login</p>
+                                    </div>
+                                    <div class="max-h-96 overflow-y-auto">
+                                        <?php if (empty($notifications)): ?>
+                                            <p class="text-center text-sm text-gray-500 py-8">No new complaints.</p>
+                                        <?php else: ?>
+                                            <?php foreach ($notifications as $n): ?>
+                                                <a href="manage_complaints.php?status=Pending" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                    <div class="flex items-start space-x-3">
+                                                        <div class="w-2 h-2 bg-red-500 rounded-full mt-1.5 flex-shrink-0"></div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <p class="text-sm font-medium text-gray-900 truncate"><?php echo htmlspecialchars($n['category']); ?></p>
+                                                            <p class="text-xs text-gray-500">by <?php echo htmlspecialchars(trim($n['user_name']) ?: 'Anonymous'); ?></p>
+                                                            <p class="text-xs text-gray-400"><?php echo date('M j, Y g:i A', strtotime($n['created_at'])); ?></p>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                                        <a href="manage_complaints.php?status=Pending" class="text-sm font-medium text-blue-600 hover:text-blue-800">
+                                            View all pending complaints
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Profile Dropdown Trigger -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
@@ -284,7 +330,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                 <p class="text-sm font-medium text-gray-600">Closed Complaints</p>
                                 <p class="text-3xl font-bold text-gray-900"><?php echo $closed_complaints; ?></p>
                             </div>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-gray-600">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
                             </svg>
                         </div>
@@ -324,28 +370,31 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                     </div>
                 </div>
 
-                <!-- Recent Complaints Table -->
-                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    <div class="xl:col-span-2 card p-6">
-                        <h2 class="text-lg font-semibold text-gray-900 mb-4">Recent Complaints</h2>
+                <!-- My Assigned Complaints (full width now) -->
+                <div class="grid grid-cols-1 gap-6">
+                    <div class="card p-6">
+                        <h2 class="text-lg font-semibold text-gray-900 mb-4">My Assigned Complaints</h2>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned</th>
                                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <?php if (empty($recent_complaints)): ?>
+                                    <?php if (empty($assigned_complaints)): ?>
                                         <tr>
-                                            <td colspan="5" class="px-6 py-4 text-center text-gray-500">No recent complaints.</td>
+                                            <td colspan="6" class="px-6 py-4 text-center text-gray-500">
+                                                No complaints assigned to you at the moment.
+                                            </td>
                                         </tr>
                                     <?php else: ?>
-                                        <?php foreach ($recent_complaints as $complaint): ?>
+                                        <?php foreach ($assigned_complaints as $complaint): ?>
                                             <tr class="hover:bg-gray-50">
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                     <?php echo htmlspecialchars($complaint['category']); ?>
@@ -356,9 +405,10 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                                 <td class="px-6 py-4 whitespace-nowrap">
                                                     <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
                                                         $s = strtoupper(trim($complaint['status']));
-                                                        echo $s === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                                                            ($s === 'IN PROGRESS' ? 'bg-blue-100 text-blue-800' :
-                                                            ($s === 'RESOLVED' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'));
+                                                        if ($s === 'PENDING') echo 'bg-yellow-100 text-yellow-800';
+                                                        elseif ($s === 'IN PROGRESS') echo 'bg-blue-100 text-blue-800';
+                                                        elseif ($s === 'RESOLVED') echo 'bg-green-100 text-green-800';
+                                                        else echo 'bg-gray-100 text-gray-800';
                                                     ?>">
                                                         <?php echo htmlspecialchars($complaint['status']); ?>
                                                     </span>
@@ -366,8 +416,11 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                     <?php echo date('M j, Y', strtotime($complaint['created_at'])); ?>
                                                 </td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    <?php echo date('M j, Y', strtotime($complaint['assigned_at'])); ?>
+                                                </td>
                                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <a href="view_complaint.php?id=<?php echo $complaint['complaint_id']; ?>" class="text-blue-600 hover:text-blue-900">View</a>
+                                                    <a href="manage_complaints.php?id=<?php echo $complaint['complaint_id']; ?>" class="text-blue-600 hover:text-blue-900">View</a>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -375,31 +428,13 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
                                 </tbody>
                             </table>
                         </div>
-                        <div class="mt-4 flex justify-between">
-                            <a href="manage_complaints.php" class="text-sm text-blue-600 hover:text-blue-900">View All Complaints</a>
-                        </div>
-                    </div>
-
-                    <!-- Quick Actions -->
-                    <div class="card p-6">
-                        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-                        <div class="space-y-3">
-                            <a href="manage_complaints.php" class="block p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
-                                <div class="flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-600 mr-3">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-                                    </svg>
-                                    <span class="text-sm font-medium text-gray-700">Manage Complaints</span>
-                                </div>
+                        <div class="mt-4 flex justify-between items-center text-sm">
+                            <a href="manage_complaints.php?assigned_to=<?php echo $staff_id; ?>" class="text-blue-600 hover:text-blue-800">
+                                View All My Assigned Complaints
                             </a>
-                            <a href="view_feedback.php" class="block p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors">
-                                <div class="flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-600 mr-3">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
-                                    </svg>
-                                    <span class="text-sm font-medium text-gray-700">View Feedback</span>
-                                </div>
-                            </a>
+                            <?php if (count($assigned_complaints) >= 10): ?>
+                                <span class="text-gray-500">Showing 10 most recent</span>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -412,7 +447,7 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
         <i class="fas fa-bars text-lg"></i>
     </button>
 
-    <!-- Profile Dropdown -->
+    <!-- Profile Dropdown Menu -->
     <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30"></div>
 
     <script>
@@ -438,56 +473,53 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
             }
         });
 
+        // Profile dropdown
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
         profileDropdown.addEventListener('click', function(e) {
             e.stopPropagation();
             if (profileDropdownMenu.classList.contains('hidden')) {
-                showProfileDropdown();
+                profileDropdownMenu.classList.remove('hidden');
+                profileDropdownMenu.innerHTML = `
+                    <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        My Profile
+                    </a>
+                    <div class="border-t border-gray-100 my-1"></div>
+                    <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                        </svg>
+                        Sign Out
+                    </a>
+                `;
             } else {
-                hideProfileDropdown();
+                profileDropdownMenu.classList.add('hidden');
             }
         });
 
-        function showProfileDropdown() {
-            profileDropdownMenu.innerHTML = `
-                <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                    </svg>
-                    My Profile
-                </a>
-                <div class="border-t border-gray-100 my-1"></div>
-                <a href="../admin_logout.php" class="flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
-                    </svg>
-                    Sign Out
-                </a>
-            `;
-            profileDropdownMenu.classList.remove('hidden');
-            const rect = profileDropdown.getBoundingClientRect();
-            profileDropdownMenu.style.right = '1.5rem';
-            profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
-        }
+        document.addEventListener('click', () => profileDropdownMenu.classList.add('hidden'));
 
-        function hideProfileDropdown() {
-            profileDropdownMenu.classList.add('hidden');
-        }
+        // Notification dropdown
+        const notificationBtn = document.getElementById('notificationBtn');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        const notificationContainer = document.getElementById('notificationContainer');
 
-        document.addEventListener('click', hideProfileDropdown);
-
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
+        notificationBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => this.style.transform = 'scale(1)', 150);
-            alert('Notifications feature coming soon!');
+            notificationDropdown.classList.toggle('hidden');
         });
 
-        profileDropdown.addEventListener('mouseenter', () => profileDropdown.style.transform = 'translateY(-1px)');
-        profileDropdown.addEventListener('mouseleave', () => profileDropdown.style.transform = 'translateY(0)');
+        document.addEventListener('click', function(e) {
+            if (!notificationContainer.contains(e.target)) {
+                notificationDropdown.classList.add('hidden');
+            }
+        });
 
+        // Auto-refresh every 2 minutes
         setInterval(() => location.reload(), 120000);
     </script>
 </body>
@@ -495,5 +527,6 @@ while ($row = mysqli_fetch_assoc($recent_complaints_result)) {
 
 <?php
 if (isset($stmt)) mysqli_stmt_close($stmt);
+if (isset($assigned_stmt)) mysqli_stmt_close($assigned_stmt);
 mysqli_close($conn);
 ?>

@@ -104,6 +104,13 @@ if ($selected_user_id) {
     }
     mysqli_stmt_close($stmt);
 }
+
+// Helper function for timezone conversion (UTC to Asia/Manila)
+function formatManilaDate($utc_date) {
+    $dt = new DateTime($utc_date, new DateTimeZone('UTC'));
+    $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+    return $dt->format('M j, Y, g:i a');
+}
 ?>
 
 <!DOCTYPE html>
@@ -117,6 +124,49 @@ if ($selected_user_id) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
     <link rel="stylesheet" href="css/view_feedback.css" />
+    <style>
+        /* Basic modal styles (add to your CSS file if not present) */
+        .feedback-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.2s ease-out;
+        }
+        .feedback-modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .feedback-modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6b7280;
+        }
+        .feedback-modal-close:hover {
+            color: #ef4444;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
@@ -292,8 +342,14 @@ if ($selected_user_id) {
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <?php foreach ($feedbacks as $feedback): ?>
                                         <tr class="hover:bg-gray-50 transition-colors">
-                                            <td class="px-6 py-4 text-sm text-gray-700 max-w-md truncate">
-                                                <?= htmlspecialchars($feedback['feedback_text']) ?>
+                                            <td class="px-6 py-4 text-sm text-gray-700 max-w-md cursor-pointer" 
+                                                data-full-feedback="<?= htmlspecialchars($feedback['feedback_text'], ENT_QUOTES) ?>"
+                                                data-feedback-date="<?= htmlspecialchars(formatManilaDate($feedback['created_at']), ENT_QUOTES) ?>"
+                                                onclick="openFeedbackModalFromRow(this)">
+                                                <div class="feedback-preview truncate" title="Click to view full feedback">
+                                                    <?= htmlspecialchars($feedback['feedback_text']) ?>
+                                                </div>
+                                                <div class="text-xs text-blue-600 mt-1 hover:text-blue-800">View full</div>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
@@ -309,7 +365,7 @@ if ($selected_user_id) {
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?= date('M j, Y, g:i a', strtotime($feedback['created_at'])) ?>
+                                                <?= formatManilaDate($feedback['created_at']) ?>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -395,6 +451,71 @@ if ($selected_user_id) {
         }
 
         document.addEventListener('click', hideProfileDropdown);
+
+        // Helper functions for modal
+        function htmlDecode(str) {
+            const entities = {
+                '&amp;': '&',
+                '&lt;': '<',
+                '&gt;': '>',
+                '&quot;': '"',
+                '&#039;': "'"
+            };
+            return str.replace(/&amp;|&lt;|&gt;|&quot;|&#039;/g, m => entities[m]);
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Updated: Open modal from row data attributes
+        function openFeedbackModalFromRow(row) {
+            let fullText = htmlDecode(row.dataset.fullFeedback || '');
+            let date = row.dataset.feedbackDate || '';
+            openFeedbackModal(fullText, date);
+        }
+
+        // Updated: Feedback Modal Function
+        function openFeedbackModal(fullText, date) {
+            const modal = document.createElement('div');
+            modal.className = 'feedback-modal';
+            modal.innerHTML = `
+                <div class="feedback-modal-content">
+                    <button class="feedback-modal-close" onclick="this.closest('.feedback-modal').remove()">&times;</button>
+                    <h3 class="text-lg font-semibold mb-4">Full Feedback - ${date}</h3>
+                    <div class="prose max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">
+                        ${escapeHtml(fullText).replace(/\n/g, '<br>')}
+                    </div>
+                    <button onclick="this.closest('.feedback-modal').remove()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        Close
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // Close on outside click
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+            
+            // Close on Escape key
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    modal.remove();
+                    document.removeEventListener('keydown', escapeHandler);
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+        }
     </script>
 </body>
 </html>

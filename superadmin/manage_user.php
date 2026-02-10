@@ -1,4 +1,7 @@
 <?php
+// Set Philippine timezone sa pinaka-una (Hostinger default UTC kaya kailangan 'to)
+date_default_timezone_set('Asia/Manila');
+
 include 'session_check.php';
 
 // ---------------------------
@@ -23,7 +26,6 @@ function get_avatar_src($profile_picture, $name) {
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
 
-// ADD THIS FUNCTION: Format E.164 → Pretty Display
 function formatPhoneDisplay($e164) {
     if (!$e164) return '—';
     return preg_replace('/^\+63(\d{3})(\d{3})(\d{4})$/', '+63 $1 $2 $3', $e164);
@@ -138,13 +140,14 @@ $search = trim($_GET['search'] ?? '');
 
 // Build WHERE clause
 $where_clause = '';
-$like = '';
+$search_params = [];
 if ($search !== '') {
     $like = "%$search%";
     $where_clause = "WHERE username LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR contact_number LIKE ?";
+    $search_params = [$like, $like, $like, $like, $like];
 }
 
-// Users query - UPDATED STATUS LOGIC
+// Users query
 $users_query = "
     SELECT 
         id, username, 
@@ -160,7 +163,10 @@ $users_query = "
 
 $stmt = mysqli_prepare($conn, $users_query);
 if ($search !== '') {
-    mysqli_stmt_bind_param($stmt, 'sssssii', $like, $like, $like, $like, $like, $per_page, $offset);
+    $bind_types = str_repeat('s', count($search_params)) . 'ii';
+    $bind_refs = array_merge($search_params, [$per_page, $offset]);
+    array_unshift($bind_refs, $bind_types);
+    call_user_func_array([$stmt, 'bind_param'], $bind_refs);
 } else {
     mysqli_stmt_bind_param($stmt, "ii", $per_page, $offset);
 }
@@ -176,7 +182,10 @@ mysqli_stmt_close($stmt);
 $total_query = "SELECT COUNT(*) as total FROM users $where_clause";
 $stmt = mysqli_prepare($conn, $total_query);
 if ($search !== '') {
-    mysqli_stmt_bind_param($stmt, 'sssss', $like, $like, $like, $like, $like);
+    $bind_types = str_repeat('s', count($search_params));
+    $bind_refs = array_merge($search_params);
+    array_unshift($bind_refs, $bind_types);
+    call_user_func_array([$stmt, 'bind_param'], $bind_refs);
 }
 mysqli_stmt_execute($stmt);
 $total_result = mysqli_stmt_get_result($stmt);
@@ -540,11 +549,15 @@ mysqli_stmt_close($stmt);
         }
 
         function formatDate(dateStr) {
-            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            if (!dateStr) return '—';
+            const date = new Date(dateStr + 'Z'); // Treat as UTC from DB
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
         function formatDateTime(dateStr) {
-            return new Date(dateStr).toLocaleDateString('en-US', { 
+            if (!dateStr) return 'Never';
+            const date = new Date(dateStr + 'Z'); // Treat as UTC from DB
+            return date.toLocaleString('en-US', { 
                 month: 'short', 
                 day: 'numeric', 
                 year: 'numeric', 
@@ -604,7 +617,6 @@ mysqli_stmt_close($stmt);
                                             <p class="text-sm text-gray-900">${formatDate(user.created_at)}</p>
                                         </div>
                                     </div>
-                                    ${user.last_login ? `
                                     <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
                                         <i class="fas fa-clock text-orange-500 w-5 flex-shrink-0"></i>
                                         <div class="min-w-0 flex-1">
@@ -612,15 +624,6 @@ mysqli_stmt_close($stmt);
                                             <p class="text-sm text-gray-900">${formatDateTime(user.last_login)}</p>
                                         </div>
                                     </div>
-                                    ` : `
-                                    <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                                        <i class="fas fa-clock text-gray-400 w-5 flex-shrink-0"></i>
-                                        <div class="min-w-0 flex-1">
-                                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Last Login</p>
-                                            <p class="text-sm text-gray-500 italic">Never</p>
-                                        </div>
-                                    </div>
-                                    `}
                                 </div>
                             </div>
                         `;
@@ -644,7 +647,6 @@ mysqli_stmt_close($stmt);
             document.getElementById('viewModal').classList.add('hidden');
         });
 
-        // Close modal on outside click
         document.getElementById('viewModal').addEventListener('click', (e) => {
             if (e.target.id === 'viewModal') {
                 document.getElementById('viewModal').classList.add('hidden');
@@ -658,15 +660,15 @@ mysqli_stmt_close($stmt);
                 const id = btn.dataset.id;
                 const result = await Swal.fire({
                     title: 'Are you sure?',
-                    text: 'This cannot be undone!',
+                    text: "You won't be able to revert this!",
                     icon: 'warning',
                     showCancelButton: true,
-                    confirmButtonColor: '#3b82f6',
-                    cancelButtonColor: '#d33',
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6',
                     confirmButtonText: 'Yes, delete it!'
                 });
                 if (result.isConfirmed) {
-                    const formData = new URLSearchParams();
+                    const formData = new FormData();
                     formData.append('action', 'delete_user');
                     formData.append('user_id', id);
                     formData.append('csrf_token', '<?php echo $csrf_token; ?>');

@@ -203,6 +203,29 @@ try {
                     Feedback: Positive <strong>{$feedbackStats['positive']}</strong> | Negative <strong>{$feedbackStats['negative']}</strong> | Neutral <strong>{$feedbackStats['neutral']}</strong> (Total: {$feedbackStats['total_feedback']})
                   </p>";
 
+    // === NEW: COMPREHENSIVE CONTACT INFO HTML ===
+    $contactHtml = "<div style=\"background:#f9fafb; border-radius:8px; padding:15px; margin:10px 0;\">
+                        <h3 style=\"color:#1f2937; font-size:16px; margin:0 0 10px 0;\">📞 Contact Information</h3>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Emails:</strong><br>
+                           • info@cwd.com.ph<br>
+                           • calambawaterdistrict@yahoo.com<br>
+                           • cwd.customerservice@yahoo.com</p>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Fax:</strong> (049) 545-7952</p>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Telephone Numbers:</strong></p>
+                        <ul style=\"margin:5px 0; padding-left:20px; font-size:13px;\">
+                            <li><strong>Main Office:</strong> (049) 545-2863</li>
+                            <li><strong>Canlubang Office:</strong> (049) 545-0812</li>
+                            <li><strong>Calamba Shopping Mall:</strong> (049) 576-5048</li>
+                        </ul>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Customer Service Hotline:</strong> (049) 545-9344</p>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Procurement:</strong> (049) 545-0226</p>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>BAC Telefax:</strong> (049) 502-7108</p>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Board of Directors Office:</strong> (049) 545-6382</p>
+                        <p style=\"margin:5px 0; font-size:14px;\"><strong>Office of the General Manager:</strong> (049) 502-9531 / 0274</p>
+                        <p style=\"font-size:12px; color:#9ca3af; margin:10px 0 0 0;\">* Operating hours: Mon-Fri, 8AM-5PM. For emergencies, call the hotline.</p>
+                        <p style=\"font-size:12px; color:#9ca3af; margin:5px 0 0 0;\">More details: <a href=\"https://cwd.com.ph/contacts.html\" target=\"_blank\" style=\"color:#2563eb;\">cwd.com.ph/contacts</a></p>
+                    </div>";
+
     // === MESSAGES & USER MESSAGE ===
     $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
     $input = file_get_contents('php://input');
@@ -717,7 +740,7 @@ try {
     // === 6. OFFICE LOCATION + GOOGLE MAP EMBED ===
     if (preg_match('/\b(saan|nasaan|located|address|location|office|map|direksyon|punta|cwd office|saan ang cwd)\b/iu', $userLower)) {
         usleep(1300000 + rand(0, 700000));
-        $gmapEmbed = '<iframe src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d15472.411686808355!2d121.1576812!3d14.1887497!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33bd63dde4221d71%3A0x2b48f46c8c2e3e91!2sCalamba%20Water%20District!5e0!3m2!1sen!2sph!4v1763387982920!5m2!1sen!2sph" width="100%" height="420" style="border:0; border-radius:12px; margin:15px 0; box-shadow:0 4px 12px rgba(0,0,0,0.15);" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
+        $gmapEmbed = '<iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d230.10497887014026!2d121.1644726452572!3d14.193017247924013!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33bd63ddc33dbc13%3A0x3e550804967789a0!2sCalamba%20Water%20District%20Motorpool!5e1!3m2!1sen!2sph!4v1767930254126!5m2!1sen!2sph" width="100%" height="420" style="border:0; border-radius:12px; margin:15px 0; box-shadow:0 4px 12px rgba(0,0,0,0.15);" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>';
 
         $response = $isEnglish
             ? "$engGreeting! The Calamba Water District main office is located at:<br><br>
@@ -734,10 +757,32 @@ try {
         exit;
     }
 
+    // === 7. BRANCHES & CONTACT INFO QUERY (ENHANCED WITH FULL CONTACTS) ===
+    if (preg_match('/\b(branch|branches|sangay|office|offices|address|contact|number|location|saan|nasaan|pwd|mall|canlubang|halang|hotline|email|fax|procurement|bac|board|manager)\b/iu', $userLower)) {
+        usleep(1300000 + rand(0, 700000));
+        
+        // Enhanced with full contact info
+        $branchesList = "<ul style=\"margin:5px 0; padding-left:15px; font-size:13px; line-height:1.3;\">
+                        <li style=\"margin:2px 0;\"><strong>Main Office (Halang):</strong> Lakeview Subd., Brgy. Halang, Calamba City<br>Hours: 8AM-12NN (Mon-Fri) | <strong>Tel:</strong> (049) 545-1614 / 545-2863 / 545-2728 / 545-7895</li>
+                        <li style=\"margin:2px 0;\"><strong>Extension Office (Canlubang):</strong> Asia 1, Kaypa-ya Village, Brgy. Canlubang, Calamba City<br>Hours: 8AM-12NN & 1-5PM (Mon-Fri) | <strong>Tel:</strong> (049) 545-0812</li>
+                        <li style=\"margin:2px 0;\"><strong>Ground Floor Office (Calamba Shopping Mall):</strong> Ground Floor, Calamba Shopping Mall Bldg, Pabalang St., Calamba City<br>Hours: 8AM-5PM (Mon-Fri) | <strong>Tel:</strong> (049) 576-5048</li>
+                        </ul>
+                        <p style=\"font-size:11px; color:#9ca3af; margin:3px 0;\">* For maps/photos, check <a href=\"https://cwd.com.ph/contacts.html\" target=\"_blank\" style=\"color:#2563eb;\">cwd.com.ph/contacts</a>.</p>";
+        
+        $engResponse = "$engGreeting! Here's CWD branches and full contact details:<br><br>$branchesList<br><br>$contactHtml<br><br>";
+        $tlResponse = "$greeting! Narito ang branches ng CWD at lahat ng contact details:<br><br>$branchesList<br><br>$contactHtml<br><br>";
+        
+        $response = $isEnglish ? $engResponse : $tlResponse;
+        
+        echo json_encode(['response' => $response]);
+        mysqli_close($conn);
+        exit;
+    }
+
     // === OPENAI FALLBACK (now with full org, stats, and static) ===
     $systemPrompt = [
         'role' => 'system',
-        'content' => "You are Kuya Daloy — friendly CWD AquaSense assistant sa Calamba, Laguna.\n\nFull Org Structure:\n$boardHtml\n$managementHtml\nPublic Stats:\n$statsHtml\nStatic Info:\n$staticHtml\nReply in ".($isEnglish?"English":"Tagalog o Taglish").". Keep answers short, warm, at helpful. Use simple HTML like <strong> for bold, <br> for lines. Always end with a question."
+        'content' => "You are Kuya Daloy — friendly CWD AquaSense assistant sa Calamba, Laguna.\n\nFull Org Structure:\n$boardHtml\n$managementHtml\nPublic Stats:\n$statsHtml\nStatic Info:\n$staticHtml\nFull Contacts:\n$contactHtml\nReply in ".($isEnglish?"English":"Tagalog o Taglish").". Keep answers short, warm, at helpful. Use simple HTML like <strong> for bold, <br> for lines. Always end with a question."
     ];
 
     if (empty($messages) || $messages[0]['role'] !== 'system') {

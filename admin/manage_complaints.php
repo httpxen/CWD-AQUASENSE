@@ -1,17 +1,14 @@
 <?php
 date_default_timezone_set('Asia/Manila'); // Set PHP default to Manila
 include 'session_check.php'; // Handles DB connection ($conn), session validation, etc.
-
 // === CRITICAL FIX: FORCE MYSQL TO USE MANILA TIME (+08:00) ===
 if (isset($conn)) {
     mysqli_query($conn, "SET time_zone = '+08:00'");
 }
-
 function formatLocalDate($db_time, $format = 'M d, Y h:i A') {
     if (empty($db_time)) {
         return null;
     }
-
     if ($db_time === 'now') {
         $dt = new DateTime('now');
     } else {
@@ -19,84 +16,38 @@ function formatLocalDate($db_time, $format = 'M d, Y h:i A') {
     }
     return $dt->format($format);
 }
-
 // Get staff_id from session (assuming set during login)
 $staff_id = $_SESSION['staff_id'] ?? null;
 if (!$staff_id) {
     header("Location: ../admin_login.php?message=Please log in as admin.");
     exit();
 }
-
+// Fetch staff details early for role-based permissions
+$staff_query = "SELECT name, profile_picture, role FROM staff WHERE staff_id = ?";
+$stmt = mysqli_prepare($conn, $staff_query);
+mysqli_stmt_bind_param($stmt, "i", $staff_id);
+mysqli_stmt_execute($stmt);
+$staff_result = mysqli_stmt_get_result($stmt);
+$staff = mysqli_fetch_assoc($staff_result);
+mysqli_stmt_close($stmt);
+if (!$staff || $staff['role'] !== 'Admin') {
+    header("Location: ../admin_login.php?message=Access denied.");
+    exit();
+}
 // CSRF Token
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
-
 // Helpers
 function e($str) { return htmlspecialchars((string)$str, ENT_QUOTES, 'UTF-8'); }
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) return '../' . $profile_picture;
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
-
 // Constants
 $ALLOWED_CATEGORIES = ['Billing','Water Quality','Service Interruption','Meter / Leakage','New Connection / Disconnection','Customer Service','Others'];
 $ALLOWED_STATUSES = ['Pending', 'In Progress', 'Resolved', 'Closed'];
-
-// === EDIT COMMENT HANDLER ===
-if (isset($_POST['edit_comment'])) {
-    header('Content-Type: application/json');
-    if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
-        echo json_encode(['success' => false, 'msg' => 'Invalid CSRF token.']);
-        exit;
-    }
-    $comment_id = (int)($_POST['comment_id'] ?? 0);
-    $new_comment = trim($_POST['comment_text'] ?? '');
-    
-    if (empty($new_comment)) {
-        echo json_encode(['success' => false, 'msg' => 'Comment cannot be empty.']);
-        exit;
-    }
-
-    // Verify ownership
-    $verify_sql = "SELECT cc.commenter_type, cc.commenter_id FROM complaint_comments cc WHERE cc.comment_id = ?";
-    $verify_stmt = mysqli_prepare($conn, $verify_sql);
-    if (!$verify_stmt) {
-        echo json_encode(['success' => false, 'msg' => 'Database error: ' . mysqli_error($conn)]);
-        exit;
-    }
-    mysqli_stmt_bind_param($verify_stmt, 'i', $comment_id);
-    mysqli_stmt_execute($verify_stmt);
-    $verify_res = mysqli_stmt_get_result($verify_stmt);
-    $verify = mysqli_fetch_assoc($verify_res);
-    mysqli_stmt_close($verify_stmt);
-
-    if (!$verify || $verify['commenter_type'] !== 'staff' || $verify['commenter_id'] != $staff_id) {
-        echo json_encode(['success' => false, 'msg' => 'Unauthorized to edit this comment.']);
-        exit;
-    }
-
-    // Update
-    $update_sql = "UPDATE complaint_comments SET comment = ? WHERE comment_id = ?";
-    $update_stmt = mysqli_prepare($conn, $update_sql);
-    if (!$update_stmt) {
-        echo json_encode(['success' => false, 'msg' => 'Database prepare error: ' . mysqli_error($conn)]);
-        exit;
-    }
-    mysqli_stmt_bind_param($update_stmt, 'si', $new_comment, $comment_id);
-    $success = mysqli_stmt_execute($update_stmt);
-    
-    if (!$success) {
-        echo json_encode(['success' => false, 'msg' => 'Database update error: ' . mysqli_stmt_error($update_stmt)]);
-        mysqli_stmt_close($update_stmt);
-        exit;
-    }
-    mysqli_stmt_close($update_stmt);
-    echo json_encode(['success' => true, 'msg' => 'Comment updated successfully.']);
-    exit;
-}
-
 // === PDF EXPORT WITH MODAL ===
 if (isset($_POST['export_pdf'])) {
     if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
@@ -107,11 +58,9 @@ if (isset($_POST['export_pdf'])) {
     $year = $_POST['year'] ?? '';
     $from = $_POST['from'] ?? '';
     $to = $_POST['to'] ?? '';
-
     $clauses = [];
     $params = [];
     $types = '';
-
     // Date Logic
     if ($type === 'month' && $month && $year) {
         $from = "$year-" . str_pad($month, 2, '0', STR_PAD_LEFT) . "-01";
@@ -128,11 +77,9 @@ if (isset($_POST['export_pdf'])) {
     } else {
         die("Invalid date range.");
     }
-
     $status = isset($_POST['status']) ? $_POST['status'] : '';
     $category = isset($_POST['category']) ? $_POST['category'] : '';
     $q = isset($_POST['q']) ? trim($_POST['q']) : '';
-
     if ($status && in_array($status, $ALLOWED_STATUSES, true)) {
         $clauses[] = "c.status = ?";
         $params[] = $status;
@@ -144,12 +91,17 @@ if (isset($_POST['export_pdf'])) {
         $types .= "s";
     }
     if ($q !== '') {
-        $clauses[] = "(c.description LIKE ? OR CONCAT(u.first_name, ' ', u.last_name) LIKE ?)";
+        $search_conditions = [];
+        if (is_numeric($q)) {
+            $search_conditions[] = "c.complaint_id = ?";
+            $params[] = (int)$q;
+            $types .= "i";
+        }
+        $search_conditions[] = "CONCAT(u.first_name, ' ', u.last_name) LIKE ?";
         $params[] = "%$q%";
-        $params[] = "%$q%";
-        $types .= "ss";
+        $types .= "s";
+        $clauses[] = "(" . implode(" OR ", $search_conditions) . ")";
     }
-
     $where = $clauses ? "WHERE " . implode(" AND ", $clauses) : '';
     $sql = "
         SELECT c.complaint_id, c.category, c.description, c.status, c.action_due, c.created_at, c.updated_at, c.attachment_path, c.resolved_at,
@@ -170,7 +122,6 @@ if (isset($_POST['export_pdf'])) {
         $where
         ORDER BY c.created_at DESC
     ";
-
     $stmt = mysqli_prepare($conn, $sql);
     if ($types) mysqli_stmt_bind_param($stmt, $types, ...$params);
     mysqli_stmt_execute($stmt);
@@ -180,7 +131,6 @@ if (isset($_POST['export_pdf'])) {
         $rows[] = $row;
     }
     mysqli_stmt_close($stmt);
-
     // PDF Generation
     require_once '../vendor/tecnickcom/tcpdf/tcpdf.php';
     $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
@@ -195,14 +145,12 @@ if (isset($_POST['export_pdf'])) {
     $pdf->SetHeaderMargin(5);
     $pdf->SetFooterMargin(10);
     $pdf->AddPage();
-
     // Title
     $pdf->SetFont('helvetica', 'B', 16);
     $title = 'Complaints Report ' . formatLocalDate('now', 'Y');
     $pdf->SetY(15);
     $pdf->Cell(0, 10, $title, 0, 1, 'C');
     $pdf->Ln(8);
-
     // Filters Info
     $pdf->SetFont('helvetica', '', 10);
     $filter_text = "Exported on: " . formatLocalDate('now') . "\n";
@@ -212,7 +160,6 @@ if (isset($_POST['export_pdf'])) {
     $filter_text .= "Total Records: " . count($rows);
     $pdf->MultiCell(0, 10, $filter_text, 0, 'L');
     $pdf->Ln(5);
-
     // Table Header
     $pdf->SetFont('helvetica', 'B', 9);
     $pdf->SetFillColor(59, 130, 246);
@@ -225,7 +172,6 @@ if (isset($_POST['export_pdf'])) {
         $pdf->Cell($widths[$i], $h, $col, 1, 0, 'C', true);
     }
     $pdf->Ln();
-
     // Table Data
     $pdf->SetFont('helvetica', '', 8);
     $pdf->SetTextColor(0, 0, 0);
@@ -244,12 +190,10 @@ if (isset($_POST['export_pdf'])) {
         $pdf->Ln();
         $fill = !$fill;
     }
-
     $filename = 'complaints_report_' . formatLocalDate('now', 'Y') . '.pdf';
     $pdf->Output($filename, 'D');
     exit;
 }
-
 // === LIST VIEW ===
 $status = isset($_GET['status']) ? $_GET['status'] : '';
 $category = isset($_GET['category']) ? $_GET['category'] : '';
@@ -257,11 +201,9 @@ $q = isset($_GET['q']) ? trim($_GET['q']) : '';
 $page = max(1, isset($_GET['page']) ? (int)$_GET['page'] : 1);
 $per_page = 10;
 $offset = ($page - 1) * $per_page;
-
 $clauses = [];
 $params = [];
 $types = '';
-
 if ($status && in_array($status, $ALLOWED_STATUSES, true)) {
     $clauses[] = "c.status = ?";
     $params[] = $status;
@@ -273,12 +215,17 @@ if ($category && in_array($category, $ALLOWED_CATEGORIES, true)) {
     $types .= "s";
 }
 if ($q !== '') {
-    $clauses[] = "(c.description LIKE ? OR CONCAT(u.first_name, ' ', u.last_name) LIKE ?)";
+    $search_conditions = [];
+    if (is_numeric($q)) {
+        $search_conditions[] = "c.complaint_id = ?";
+        $params[] = (int)$q;
+        $types .= "i";
+    }
+    $search_conditions[] = "CONCAT(u.first_name, ' ', u.last_name) LIKE ?";
     $params[] = "%$q%";
-    $params[] = "%$q%";
-    $types .= "ss";
+    $types .= "s";
+    $clauses[] = "(" . implode(" OR ", $search_conditions) . ")";
 }
-
 $where = $clauses ? "WHERE " . implode(" AND ", $clauses) : '';
 $count_sql = "SELECT COUNT(*) AS cnt FROM complaints c LEFT JOIN users u ON c.user_id = u.id $where";
 $count_stmt = mysqli_prepare($conn, $count_sql);
@@ -288,7 +235,6 @@ $count_res = mysqli_stmt_get_result($count_stmt);
 $total_rows = (int)mysqli_fetch_assoc($count_res)['cnt'];
 mysqli_stmt_close($count_stmt);
 $total_pages = max(1, (int)ceil($total_rows / $per_page));
-
 $list_sql = "
     SELECT c.complaint_id, c.category, c.description, c.status, c.action_due, c.created_at, c.updated_at, c.attachment_path, c.resolved_at, c.sentiment, c.location_address, c.location_lat, c.location_lng,
            CONCAT(u.first_name, ' ', u.last_name) AS user_name, u.email AS user_email, u.profile_picture AS user_profile_picture,
@@ -315,20 +261,7 @@ $params_paged = array_merge($params, [$per_page, $offset]);
 mysqli_stmt_bind_param($list_stmt, $types_paged, ...$params_paged);
 mysqli_stmt_execute($list_stmt);
 $list_res = mysqli_stmt_get_result($list_stmt);
-
-// Collect unique categories for filters
-$unique_categories = [];
-$unique_statuses = $ALLOWED_STATUSES;
-if ($total_rows > 0) {
-    mysqli_data_seek($list_res, 0);
-    while ($row = mysqli_fetch_assoc($list_res)) {
-        if (!in_array($row['category'], $unique_categories)) {
-            $unique_categories[] = $row['category'];
-        }
-    }
-    mysqli_data_seek($list_res, 0);
-}
-
+// Use ALLOWED_CATEGORIES for filters (no need for unique from current page)
 // Fetch comments
 $complaint_ids = [];
 mysqli_data_seek($list_res, 0);
@@ -336,7 +269,6 @@ while ($row = mysqli_fetch_assoc($list_res)) {
     $complaint_ids[] = $row['complaint_id'];
 }
 mysqli_data_seek($list_res, 0);
-
 $comments = [];
 if (!empty($complaint_ids)) {
     $ids_placeholder = str_repeat('?,', count($complaint_ids) - 1) . '?';
@@ -364,21 +296,12 @@ if (!empty($complaint_ids)) {
     }
     mysqli_stmt_close($comments_stmt);
 }
-
 $staff_sql = "SELECT staff_id, name FROM staff ORDER BY name";
 $staff_res = mysqli_query($conn, $staff_sql);
 $staff_list = [];
 while ($row = mysqli_fetch_assoc($staff_res)) {
     $staff_list[] = $row;
 }
-
-$staff_query = "SELECT name, profile_picture, role FROM staff WHERE staff_id = ?";
-$stmt = mysqli_prepare($conn, $staff_query);
-mysqli_stmt_bind_param($stmt, "i", $staff_id);
-mysqli_stmt_execute($stmt);
-$staff_result = mysqli_stmt_get_result($stmt);
-$staff = mysqli_fetch_assoc($staff_result);
-mysqli_stmt_close($stmt);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -423,13 +346,13 @@ mysqli_stmt_close($stmt);
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
                         </svg>
-                        Manage Staff
+                        View Staff
                     </a>
                     <a href="manage_user.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
                         </svg>
-                        Manage Users
+                        View Users
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
@@ -464,7 +387,6 @@ mysqli_stmt_close($stmt);
                 </div>
             </div>
         </div>
-
         <div class="flex-1">
             <header class="header-2025 sticky top-0 z-20">
                 <div class="px-6 py-4">
@@ -486,7 +408,6 @@ mysqli_stmt_close($stmt);
                     </div>
                 </div>
             </header>
-
             <div id="profileDropdownMenu" class="hidden absolute right-6 top-20 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-30">
                 <a href="accountsettings.php" class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-blue-500">
@@ -502,22 +423,21 @@ mysqli_stmt_close($stmt);
                     Sign Out
                 </a>
             </div>
-
             <main class="p-4 space-y-6">
                 <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-4 sm:p-6">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div class="relative flex-1 max-w-md">
-                            <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                            <input type="text" id="globalSearch" placeholder="Search complaints..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200" value="<?php echo e($q); ?>">
-                        </div>
-              
-                        <div class="flex flex-wrap gap-2 items-center">
+                        <form method="GET" action="manage_complaints.php" id="filterForm" class="flex flex-wrap items-center gap-2 flex-1">
+                            <input type="hidden" name="page" value="1">
+                            <div class="relative flex-1 max-w-md">
+                                <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                                <input type="text" name="q" id="globalSearch" placeholder="Search by Complaint # or Customer Name..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200" value="<?php echo e($q); ?>">
+                            </div>
                             <div class="relative">
-                                <select id="statusFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <select name="status" id="statusFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" onchange="this.form.submit()">
                                     <option value="">All Status</option>
-                                    <?php foreach ($unique_statuses as $status_option): ?>
+                                    <?php foreach ($ALLOWED_STATUSES as $status_option): ?>
                                         <option value="<?php echo e($status_option); ?>" <?php echo $status_option === $status ? 'selected' : ''; ?>><?php echo e($status_option); ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -527,11 +447,10 @@ mysqli_stmt_close($stmt);
                                     </svg>
                                 </div>
                             </div>
-                  
                             <div class="relative">
-                                <select id="categoryFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <select name="category" id="categoryFilter" class="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" onchange="this.form.submit()">
                                     <option value="">All Categories</option>
-                                    <?php foreach ($unique_categories as $cat): ?>
+                                    <?php foreach ($ALLOWED_CATEGORIES as $cat): ?>
                                         <option value="<?php echo e($cat); ?>" <?php echo $category === $cat ? 'selected' : ''; ?>><?php echo e($cat); ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -541,13 +460,14 @@ mysqli_stmt_close($stmt);
                                     </svg>
                                 </div>
                             </div>
-                  
-                            <button id="clearFilters" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200">Clear</button>
+                            <button type="submit" class="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition duration-200 border border-blue-200">Apply</button>
+                        </form>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <button type="button" id="clearFilters" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition duration-200">Clear</button>
                             <button onclick="openExportModal()" class="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition duration-200 border border-blue-200">Export PDF</button>
                         </div>
                     </div>
                 </div>
-
                 <?php if ($total_rows === 0): ?>
                     <div class="text-center py-12 text-gray-500 bg-white rounded-lg border border-gray-200">
                         No complaints yet.
@@ -558,7 +478,7 @@ mysqli_stmt_close($stmt);
                             <?php
                             $current_status = $row['status'] ?? 'Pending';
                             $sentiment = $row['sentiment'] ?? '';
-                            
+                   
                             // Fetch assignments for history timeline
                             $assign_sql = "
                                 SELECT ca.id, ca.assigned_at, ca.status AS assignment_status, s.name AS staff_name,
@@ -577,19 +497,17 @@ mysqli_stmt_close($stmt);
                                 $assignments[] = $assign;
                             }
                             mysqli_stmt_close($assign_stmt);
-
                             // Status badge
                             $status_badge = 'bg-gray-100 text-gray-700';
                             if ($current_status === 'Pending') $status_badge = 'bg-yellow-50 text-yellow-700 border border-yellow-200';
                             if ($current_status === 'In Progress') $status_badge = 'bg-blue-50 text-blue-700 border border-blue-200';
                             if ($current_status === 'Resolved') $status_badge = 'bg-green-50 text-green-700 border border-green-200';
                             if ($current_status === 'Closed') $status_badge = 'bg-gray-100 text-gray-700 border border-gray-200';
-
                             // Sentiment badge
                             $sentiment_badge = 'bg-gray-50 text-gray-600 border border-gray-200';
                             if ($sentiment === 'Positive') $sentiment_badge = 'bg-green-50 text-green-700 border border-green-200';
                             if ($sentiment === 'Negative') $sentiment_badge = 'bg-red-50 text-red-700 border border-red-200';
-                            
+                   
                             $sentiment_icon = '';
                             if ($sentiment === 'Positive') {
                                 $sentiment_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 flex-shrink-0">
@@ -600,7 +518,6 @@ mysqli_stmt_close($stmt);
                                                         <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
                                                    </svg>';
                             }
-
                             // Customer display
                             $customer_display = '
                             <div class="flex items-center space-x-2">
@@ -614,11 +531,10 @@ mysqli_stmt_close($stmt);
                                 </div>
                                 <span class="status-badge bg-green-50 text-green-700 border border-green-200 text-xs px-1 py-0.5">Customer</span>
                             </div>';
-
                             // Assigned display
                             $assigned_badge = 'bg-purple-50 text-purple-700 border border-purple-200 inline-block';
                             $assigned_text = !empty($row['staff_name']) ? $row['staff_name'] . ($row['staff_role'] ? ' (' . $row['staff_role'] . ')' : '') : 'Unassigned';
-                            
+                   
                             $assigned_display = '';
                             if (!empty($row['staff_name'])) {
                                 $avatar_src = get_avatar_src($row['staff_profile_picture'], $row['staff_name']);
@@ -645,14 +561,13 @@ mysqli_stmt_close($stmt);
                                     <span class="text-gray-400 italic text-sm">Unassigned</span>
                                 </div>';
                             }
-
                             // Due date display
                             $due_display = '';
                             if ($row['action_due']):
                                 $current_date = date('Y-m-d');
                                 $due_date = $row['action_due'];
                                 $days_until_due = (strtotime($due_date) - strtotime($current_date)) / (60 * 60 * 24);
-                                
+                       
                                 $due_class = 'bg-green-50 text-green-700 border border-green-200';
                                 if ($days_until_due <= 0) {
                                     $due_class = 'bg-red-50 text-red-700 border border-red-200 animate-pulse';
@@ -667,7 +582,6 @@ mysqli_stmt_close($stmt);
                                     Due: ' . e(formatLocalDate($due_date . ' 00:00:00', 'M d, Y')) . '
                                 </span>';
                             endif;
-
                             // Category display
                             $category_badge = 'bg-gray-50 text-gray-600 border border-gray-200';
                             $category_display = '
@@ -678,7 +592,6 @@ mysqli_stmt_close($stmt);
                                 <p class="text-sm font-medium text-gray-800">' . e($row['category']) . '</p>
                                 <span class="status-badge ' . $category_badge . ' text-xs px-1 py-0.5">Category</span>
                             </div>';
-
                             // Build status history for timeline
                             $status_history = [];
                             $status_history[] = [
@@ -687,7 +600,6 @@ mysqli_stmt_close($stmt);
                                 'event' => 'Complaint Created',
                                 'details' => 'Initial status: Pending'
                             ];
-
                             $previous_status = 'Pending';
                             foreach ($assignments as $assign) {
                                 $assign_status = $assign['assignment_status'] ?? 'Pending';
@@ -711,7 +623,6 @@ mysqli_stmt_close($stmt);
                                 ];
                                 $previous_status = $assign_status;
                             }
-
                             $last_assignment_status = end($assignments)['assignment_status'] ?? 'Pending';
                             if ($current_status !== $last_assignment_status) {
                                 $change_timestamp = !empty($row['resolved_at']) && in_array($current_status, ['Resolved', 'Closed']) ? $row['resolved_at'] : $row['updated_at'];
@@ -722,14 +633,13 @@ mysqli_stmt_close($stmt);
                                     'details' => 'Status changed from ' . $last_assignment_status . ' to ' . $current_status
                                 ];
                             }
-
                             // Add comments to history
                             $complaint_comments = $comments[$row['complaint_id']] ?? [];
                             foreach ($complaint_comments as $comment) {
                                 $profile_picture = $comment['commenter_type'] === 'staff' ? get_avatar_src($comment['staff_profile_picture'], $comment['commenter_name']) : get_avatar_src($comment['user_profile_picture'], $comment['commenter_name']);
                                 $status_history[] = [
                                     'timestamp' => $comment['created_at'],
-                                    'status' => $current_status, 
+                                    'status' => $current_status,
                                     'event' => 'Comment Added',
                                     'details' => [
                                         'commenter_name' => $comment['commenter_name'],
@@ -742,11 +652,10 @@ mysqli_stmt_close($stmt);
                                     ]
                                 ];
                             }
-                            
+                   
                             usort($status_history, function($a, $b) {
                                 return strtotime($a['timestamp']) - strtotime($b['timestamp']);
                             });
-
                             // Resolved badge
                             $resolved_display = '';
                             if (in_array($current_status, ['Resolved', 'Closed']) && !empty($row['resolved_at'])) {
@@ -759,7 +668,6 @@ mysqli_stmt_close($stmt);
                                 </span>';
                             }
                             ?>
-
                             <div class="complaint-card" data-status="<?php echo e($current_status); ?>" data-category="<?php echo e($row['category']); ?>" data-description="<?php echo e(strtolower($row['description'])); ?>" data-user="<?php echo e(strtolower($row['user_name'] ?? '')); ?>" data-complaint-id="<?php echo (int)$row['complaint_id']; ?>" data-action-due="<?php echo e($row['action_due'] ?? ''); ?>" data-resolved-at="<?php echo !empty($row['resolved_at']) ? e(date('Y-m-d', strtotime($row['resolved_at']))) : ''; ?>">
                                 <button type="button" class="w-full p-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 focus:outline-none" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180');">
                                     <div class="flex items-center space-x-3">
@@ -770,7 +678,6 @@ mysqli_stmt_close($stmt);
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                                     </svg>
                                 </button>
-
                                 <div class="hidden p-4 space-y-4">
                                     <div class="complaint-header">
                                         <div class="complaint-meta">
@@ -791,7 +698,7 @@ mysqli_stmt_close($stmt);
                                             <?php echo $resolved_display; ?>
                                         </div>
                                     </div>
-                                    
+                           
                                     <div class="complaint-description">
                                         <h4 class="text-sm font-medium text-gray-700 mb-1">Description</h4>
                                         <p class="text-sm text-gray-600 bg-gray-50 p-3 rounded-md"><?php echo nl2br(e($row['description'])); ?></p>
@@ -803,7 +710,6 @@ mysqli_stmt_close($stmt);
                                             </div>
                                         <?php endif; ?>
                                     </div>
-
                                     <div class="complaint-actions flex gap-2">
                                         <button onclick="openAssignModal(<?php echo (int)$row['complaint_id']; ?>)" class="bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 transition-colors flex items-center">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1">
@@ -818,7 +724,6 @@ mysqli_stmt_close($stmt);
                                             Update Status
                                         </button>
                                     </div>
-
                                     <?php if (!empty($row['location_address']) || (!empty($row['location_lat']) && !empty($row['location_lng']))): ?>
                                     <div class="location-section">
                                         <h4 class="text-sm font-medium text-gray-700 mb-1">Location</h4>
@@ -836,7 +741,6 @@ mysqli_stmt_close($stmt);
                                         <?php endif; ?>
                                     </div>
                                     <?php endif; ?>
-
                                     <div>
                                         <h4 class="text-sm font-medium text-gray-700 mb-2">History Timeline</h4>
                                         <div class="relative border-l-2 border-gray-200 ml-6">
@@ -847,7 +751,7 @@ mysqli_stmt_close($stmt);
                                                     $icon_class = 'text-gray-600';
                                                     $icon_path = 'M4.5 12.75l6 6 9-13.5'; // Default check
                                                     $event_status = $event['status'] ?? 'Pending';
-                                                    
+                                           
                                                     if ($event['event'] === 'Complaint Created') {
                                                         $dot_class = 'bg-yellow-100';
                                                         $icon_class = 'text-yellow-600';
@@ -874,7 +778,7 @@ mysqli_stmt_close($stmt);
                                                     <div class="mt-3 bg-white p-3 rounded-lg shadow-sm border border-gray-100">
                                                         <p class="text-xs text-gray-400"><?php echo formatLocalDate($event['timestamp']); ?></p>
                                                         <p class="text-sm font-medium text-gray-900"><?php echo e($event['event']); ?></p>
-                                                        
+                                               
                                                         <?php if ($event['event'] === 'Assigned to Staff' && isset($event['details']['staff_name'])): ?>
                                                             <div class="flex items-center mt-1 space-x-2">
                                                                 <img src="<?php echo e($event['details']['staff_profile_picture']); ?>" alt="Staff Avatar" class="w-5 h-5 rounded-full object-cover">
@@ -883,7 +787,6 @@ mysqli_stmt_close($stmt);
                                                                     <p class="text-xs text-gray-500"><?php echo e($event['details']['staff_role']); ?></p>
                                                                 </div>
                                                             </div>
-
                                                         <?php elseif ($event['event'] === 'Comment Added' && isset($event['details']['commenter_name'])): ?>
                                                             <div class="flex items-center mt-1 space-x-2">
                                                                 <img src="<?php echo e($event['details']['profile_picture']); ?>" alt="Commenter Avatar" class="w-5 h-5 rounded-full object-cover">
@@ -894,14 +797,8 @@ mysqli_stmt_close($stmt);
                                                             </div>
                                                             <div class="flex flex-col">
                                                                 <p class="text-sm text-gray-700 mt-2 italic bg-gray-50 p-2 rounded-md border-l-4 border-indigo-500"><?php echo nl2br(e($event['details']['comment_text'])); ?></p>
-                                                                <?php if (isset($event['details']['commenter_type']) && $event['details']['commenter_type'] === 'staff' && $event['details']['commenter_id'] == $staff_id): ?>
-                                                                    <button onclick="openEditCommentModal(<?php echo (int)$event['details']['comment_id']; ?>, '<?php echo e(addslashes($event['details']['comment_text'])); ?>', <?php echo (int)$row['complaint_id']; ?>)" class="mt-1 self-end text-xs text-blue-600 hover:underline px-2 py-1 rounded hover:bg-blue-50 transition-colors">
-                                                                        <i class="fas fa-edit mr-1"></i>Edit
-                                                                    </button>
-                                                                <?php endif; ?>
                                                             </div>
                                                         <?php endif; ?>
-
                                                         <?php if ($event['event'] !== 'Comment Added'): ?>
                                                             <p class="text-xs text-gray-500 mt-1"><?php echo is_array($event['details']) ? 'Status: ' . e($event_status) : e($event['details']); ?></p>
                                                         <?php endif; ?>
@@ -915,7 +812,6 @@ mysqli_stmt_close($stmt);
                         <?php endwhile; ?>
                     </div>
                 <?php endif; ?>
-
                 <?php if ($total_pages > 1): ?>
                     <div id="pagination" class="p-6 border-t border-gray-200 bg-gray-50 rounded-lg">
                         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -935,11 +831,9 @@ mysqli_stmt_close($stmt);
             </main>
         </div>
     </div>
-
     <button id="mobileMenuToggle" class="fixed top-4 left-4 z-40 p-2 rounded-lg text-gray-600 bg-white shadow-lg md:hidden">
         <i class="fas fa-bars text-lg"></i>
     </button>
-
     <div id="exportModal" class="modal">
         <div class="bg-white w-11/12 max-w-md rounded-2xl p-6 shadow-2xl">
             <div class="flex items-center justify-between mb-4">
@@ -990,8 +884,8 @@ mysqli_stmt_close($stmt);
                     </div>
                     <div class="flex justify-end space-x-2 mt-6">
                         <button type="button" onclick="closeExportModal()" class="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
-                        <button type="submit" name="export_pdf" id="generatePdfBtn" 
-                                class="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white opacity-50 cursor-not-allowed pointer-events-none transition-all" 
+                        <button type="submit" name="export_pdf" id="generatePdfBtn"
+                                class="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white opacity-50 cursor-not-allowed pointer-events-none transition-all"
                                 disabled>
                             Generate PDF
                         </button>
@@ -1000,7 +894,6 @@ mysqli_stmt_close($stmt);
             </form>
         </div>
     </div>
-
     <div id="assignModal" class="modal">
         <div class="bg-white w-11/12 max-w-md rounded-2xl p-6 shadow-2xl">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Assign Complaint</h3>
@@ -1022,7 +915,6 @@ mysqli_stmt_close($stmt);
             </form>
         </div>
     </div>
-
     <div id="statusModal" class="modal">
         <div class="bg-white w-11/12 max-w-md rounded-2xl p-6 shadow-2xl">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">Update Status</h3>
@@ -1035,23 +927,20 @@ mysqli_stmt_close($stmt);
                             <option value="<?php echo e($s); ?>"><?php echo e($s); ?></option>
                         <?php endforeach; ?>
                     </select>
-
                     <div id="resolvedDateField" style="display:none;">
                         <label class="block text-sm font-medium text-gray-700">Resolved Date</label>
                         <input type="date" name="resolved_at" class="w-full border border-gray-200 rounded-lg px-3 py-2">
                     </div>
-
                     <div id="dueDateField" style="display:none;">
                         <label class="block text-sm font-medium text-gray-700">Due Date</label>
                         <input type="date" name="action_due" class="w-full border border-gray-200 rounded-lg px-3 py-2">
                     </div>
-                    
+           
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Add Comment (Optional)</label>
                         <textarea name="comment_text" rows="3" class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Mag-comment ka rito para ma-update ang customer (e.g., 'Nag-progress na po ang issue, expected resolution by Friday.')"></textarea>
                         <p class="text-xs text-gray-500 mt-1">Makikita ito ng customer sa kanilang dashboard.</p>
                     </div>
-
                     <div class="flex justify-end space-x-2">
                         <button type="button" onclick="closeStatusModal()" class="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
                         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Update & Comment</button>
@@ -1060,28 +949,6 @@ mysqli_stmt_close($stmt);
             </form>
         </div>
     </div>
-
-    <div id="editCommentModal" class="modal">
-        <div class="bg-white w-11/12 max-w-md rounded-2xl p-6 shadow-2xl">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Edit Comment</h3>
-            <form id="editCommentForm">
-                <input type="hidden" name="comment_id" id="editCommentId">
-                <input type="hidden" name="complaint_id" id="editComplaintId">
-                <input type="hidden" name="csrf_token" value="<?php echo e($csrf_token); ?>">
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Comment</label>
-                        <textarea name="comment_text" id="editCommentText" rows="3" class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" required placeholder="Edit your comment here..."></textarea>
-                    </div>
-                    <div class="flex justify-end space-x-2">
-                        <button type="button" onclick="closeEditCommentModal()" class="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
-                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Update Comment</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <div id="mapModal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4 overflow-auto">
         <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center">
@@ -1094,7 +961,6 @@ mysqli_stmt_close($stmt);
             </div>
         </div>
     </div>
-
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -1104,7 +970,6 @@ mysqli_stmt_close($stmt);
             sidebar.classList.toggle('-translate-x-full');
             sidebar.classList.toggle('translate-x-0');
         });
-
         // Profile Dropdown
         const profileDropdown = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
@@ -1120,7 +985,11 @@ mysqli_stmt_close($stmt);
                 profileDropdownMenu.classList.add('hidden');
             }
         });
-
+        // Clear Filters
+        document.getElementById('clearFilters').addEventListener('click', function() {
+            document.getElementById('filterForm').reset();
+            document.getElementById('filterForm').submit();
+        });
         // Export Modal functions
         function toggleDateOption() {
             const type = document.querySelector('input[name="date_type"]:checked').value;
@@ -1128,12 +997,10 @@ mysqli_stmt_close($stmt);
             document.getElementById('rangeOption').style.display = type === 'range' ? 'block' : 'none';
             validateExportForm();
         }
-
         function validateExportForm() {
             const type = document.querySelector('input[name="date_type"]:checked').value;
             const btn = document.getElementById('generatePdfBtn');
             let valid = false;
-
             if (type === 'month') {
                 const month = document.getElementById('exportMonth').value;
                 const year = document.getElementById('exportYear').value;
@@ -1143,7 +1010,6 @@ mysqli_stmt_close($stmt);
                 const to = document.getElementById('exportTo').value;
                 valid = from && to && from <= to;
             }
-
             if (valid) {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
@@ -1154,22 +1020,14 @@ mysqli_stmt_close($stmt);
                 btn.classList.remove('hover:bg-blue-700');
             }
         }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            toggleDateOption();
-            validateExportForm();
-        });
-
         function openExportModal() { document.getElementById('exportModal').classList.add('show'); }
         function closeExportModal() { document.getElementById('exportModal').classList.remove('show'); }
-
         function openAssignModal(id) {
             document.getElementById('assignComplaintId').value = id;
             document.getElementById('assignStaffSelect').value = '';
             document.getElementById('assignModal').classList.add('show');
         }
         function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
-
         function openStatusModal(id) {
             document.getElementById('statusComplaintId').value = id;
             const card = document.querySelector(`[data-complaint-id="${id}"]`);
@@ -1180,44 +1038,33 @@ mysqli_stmt_close($stmt);
             const currentStatus = card.dataset.status;
             const select = document.querySelector('#statusForm select[name="status"]');
             select.value = currentStatus;
-            
+   
             const resolvedInput = document.querySelector('#statusForm input[name="resolved_at"]');
             const dueInput = document.querySelector('#statusForm input[name="action_due"]');
-            
+   
             if (['Resolved', 'Closed'].includes(currentStatus)) {
                 resolvedInput.value = card.dataset.resolvedAt || '';
             } else {
                 resolvedInput.value = '';
             }
-
             if (currentStatus === 'In Progress') {
                 dueInput.value = card.dataset.actionDue || '';
             } else {
                 dueInput.value = '';
             }
-            
+   
             toggleDateFields(select);
             // Clear comment textarea
             document.querySelector('#statusForm textarea[name="comment_text"]').value = '';
             document.getElementById('statusModal').classList.add('show');
         }
         function closeStatusModal() { document.getElementById('statusModal').classList.remove('show'); }
-
-        function openEditCommentModal(commentId, text, complaintId) {
-            document.getElementById('editCommentId').value = commentId;
-            document.getElementById('editComplaintId').value = complaintId;
-            document.getElementById('editCommentText').value = text;
-            document.getElementById('editCommentModal').classList.add('show');
-        }
-        function closeEditCommentModal() { document.getElementById('editCommentModal').classList.remove('show'); }
-
         function toggleDateFields(select) {
             const resolvedField = document.getElementById('resolvedDateField');
             const dueField = document.getElementById('dueDateField');
-            
+   
             resolvedField.style.display = 'none';
             dueField.style.display = 'none';
-
             const value = select.value;
             if (['Resolved', 'Closed'].includes(value)) {
                 resolvedField.style.display = 'block';
@@ -1233,11 +1080,9 @@ mysqli_stmt_close($stmt);
                 }
             }
         }
-
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('show'); });
         });
-
         // AJAX Assignment
         document.getElementById('assignForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -1245,7 +1090,6 @@ mysqli_stmt_close($stmt);
             const complaintId = document.getElementById('assignComplaintId').value;
             const staffSelect = document.getElementById('assignStaffSelect');
             const selectedStaff = staffSelect.options[staffSelect.selectedIndex].text;
-
             try {
                 const response = await fetch('assign_complaint.php', {
                     method: 'POST',
@@ -1259,7 +1103,7 @@ mysqli_stmt_close($stmt);
                         icon: 'success',
                         confirmButtonColor: '#3b82f6'
                     }).then(() => {
-                        location.reload(); 
+                        location.reload();
                     });
                 } else {
                     Swal.fire({
@@ -1278,7 +1122,6 @@ mysqli_stmt_close($stmt);
                 });
             }
         });
-
         // Updated AJAX Status Update with Comment
         document.getElementById('statusForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -1287,11 +1130,9 @@ mysqli_stmt_close($stmt);
             const newStatus = document.querySelector('#statusForm select[name="status"]').value;
             const resolvedAt = document.querySelector('#statusForm input[name="resolved_at"]').value;
             const commentText = document.querySelector('#statusForm textarea[name="comment_text"]').value.trim();
-
             if (commentText) {
                 formData.append('comment_text', commentText);
             }
-
             try {
                 const response = await fetch('update_status.php', {
                     method: 'POST',
@@ -1327,98 +1168,6 @@ mysqli_stmt_close($stmt);
                 });
             }
         });
-
-        // AJAX Edit Comment
-        document.getElementById('editCommentForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.append('edit_comment', '1');
-
-            try {
-                const response = await fetch(window.location.href, {
-                    method: 'POST',
-                    body: formData
-                });
-                if (!response.ok) {
-                    throw new Error('Server error: ' + response.status);
-                }
-                const data = await response.json();
-                if (data.success) {
-                    Swal.fire({
-                        title: 'Success!',
-                        text: data.msg,
-                        icon: 'success',
-                        confirmButtonColor: '#3b82f6'
-                    }).then(() => {
-                        closeEditCommentModal();
-                        location.reload(); 
-                    });
-                } else {
-                    Swal.fire({
-                        title: 'Error!',
-                        text: data.msg,
-                        icon: 'error',
-                        confirmButtonColor: '#3b82f6'
-                    });
-                }
-            } catch (error) {
-                console.error('Edit comment error:', error);
-                Swal.fire({
-                    title: 'Error!',
-                    text: 'Failed to update comment. Please try again. (Check console for details)',
-                    icon: 'error',
-                    confirmButtonColor: '#3b82f6'
-                });
-            }
-        });
-
-        // Client-side Filtering Logic
-        document.addEventListener('DOMContentLoaded', function() {
-            const container = document.getElementById('complaintsContainer');
-            const cards = container ? container.querySelectorAll('.complaint-card') : [];
-            const searchInput = document.getElementById('globalSearch');
-            const statusFilter = document.getElementById('statusFilter');
-            const categoryFilter = document.getElementById('categoryFilter');
-            const clearBtn = document.getElementById('clearFilters');
-
-            function filterCards() {
-                const searchTerm = searchInput.value.toLowerCase();
-                const selectedStatus = statusFilter.value;
-                const selectedCategory = categoryFilter.value;
-
-                cards.forEach(card => {
-                    const status = card.dataset.status.toLowerCase();
-                    const category = card.dataset.category.toLowerCase();
-                    const description = card.dataset.description;
-                    const userName = card.dataset.user || '';
-                    
-                    const matchesSearch = description.includes(searchTerm) || userName.includes(searchTerm);
-                    const matchesStatus = !selectedStatus || status === selectedStatus.toLowerCase();
-                    const matchesCategory = !selectedCategory || category === selectedCategory.toLowerCase();
-
-                    if (matchesSearch && matchesStatus && matchesCategory) {
-                        card.classList.remove('hidden');
-                    } else {
-                        card.classList.add('hidden');
-                    }
-                });
-            }
-
-            // Event Listeners
-            if (searchInput) searchInput.addEventListener('input', filterCards);
-            if (statusFilter) statusFilter.addEventListener('change', filterCards);
-            if (categoryFilter) categoryFilter.addEventListener('change', filterCards);
-            if (clearBtn) clearBtn.addEventListener('click', function() {
-                searchInput.value = '';
-                statusFilter.value = '';
-                categoryFilter.value = '';
-                filterCards();
-            });
-
-            // Initial filter
-            filterCards();
-        });
-
         // Map Modal Functionality
         let modalMap = null;
         const customIcon = L.icon({
@@ -1428,7 +1177,6 @@ mysqli_stmt_close($stmt);
             iconAnchor: [12, 41],
             popupAnchor: [1, -34]
         });
-
         function openMapModal(lat, lng, address = '') {
             const modal = document.getElementById('mapModal');
             if (!modal) {
@@ -1436,7 +1184,6 @@ mysqli_stmt_close($stmt);
                 return;
             }
             modal.classList.remove('hidden');
-
             setTimeout(() => {
                 if (!modalMap) {
                     if (typeof L === 'undefined') {
@@ -1471,9 +1218,8 @@ mysqli_stmt_close($stmt);
                     }
                     marker.bindPopup(popupContent).openPopup();
                 }
-            }, 100); 
+            }, 100);
         }
-
         function closeMapModal() {
             const modal = document.getElementById('mapModal');
             if (modal) {
@@ -1484,7 +1230,6 @@ mysqli_stmt_close($stmt);
                 modalMap = null;
             }
         }
-
         document.addEventListener('click', function(e) {
             const btn = e.target.closest('.view-map-btn');
             if (btn) {
@@ -1498,12 +1243,10 @@ mysqli_stmt_close($stmt);
                 openMapModal(lat, lng, address);
             }
         });
-
         const closeBtn = document.getElementById('closeMapModal');
         if (closeBtn) {
             closeBtn.addEventListener('click', closeMapModal);
         }
-
         const mapModalEl = document.getElementById('mapModal');
         if (mapModalEl) {
             mapModalEl.addEventListener('click', function(e) {
@@ -1512,6 +1255,23 @@ mysqli_stmt_close($stmt);
                 }
             });
         }
+        document.addEventListener('DOMContentLoaded', () => {
+            // Clear search on page refresh (reload)
+            if ('performance' in window && performance.getEntriesByType('navigation').length > 0) {
+                const nav = performance.getEntriesByType('navigation')[0];
+                if (nav.type === 'reload') {
+                    const url = new URL(window.location.href);
+                    if (url.searchParams.has('q')) {
+                        url.searchParams.delete('q');
+                        window.history.replaceState(null, '', url.toString());
+                        document.getElementById('globalSearch').value = '';
+                        document.getElementById('filterForm').submit();
+                    }
+                }
+            }
+            toggleDateOption();
+            validateExportForm();
+        });
     </script>
 </body>
 </html>

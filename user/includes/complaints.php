@@ -11,13 +11,17 @@ function formatLocalDate($db_time, $format = 'M d, Y h:i A') {
         return null;
     }
     try {
+        $utc_tz = new DateTimeZone('UTC');
+        $manila_tz = new DateTimeZone('Asia/Manila');
         if ($db_time === 'now') {
-            $dt = new DateTime('now');
+            $dt = new DateTime('now', $utc_tz);
         } else {
-            $dt = new DateTime($db_time);
+            $dt = new DateTime($db_time, $utc_tz);  // Assume DB returns UTC
         }
+        $dt->setTimezone($manila_tz);  // Convert to Manila
         return $dt->format($format);
     } catch (Exception $e) {
+        error_log("DateTime error: " . $e->getMessage());  // Log for debug
         return $db_time; // Fallback
     }
 }
@@ -27,22 +31,26 @@ function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) {
         return '../' . $profile_picture;
     }
-    return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
+    $safe_name = $name ?? '';
+    return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($safe_name);
 }
 
-// Collect unique categories for filters
+// Collect unique categories for filters (case-insensitive deduplication)
 $unique_categories = [];
-$unique_statuses = ['Pending', 'In Progress', 'Resolved', 'Closed'];
-
+$seen_categories = [];
 if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
     mysqli_data_seek($list_res, 0); // Reset pointer
     while ($row = mysqli_fetch_assoc($list_res)) {
-        if (!in_array($row['category'], $unique_categories)) {
+        $lower_category = strtolower(trim($row['category']));
+        if (!isset($seen_categories[$lower_category])) {
+            $seen_categories[$lower_category] = true;
             $unique_categories[] = $row['category'];
         }
     }
     mysqli_data_seek($list_res, 0); // Reset again for loop
 }
+
+$unique_statuses = ['Pending', 'In Progress', 'Resolved', 'Closed'];
 ?>
 
 <div class="space-y-6">
@@ -98,6 +106,9 @@ if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
             <?php 
             mysqli_data_seek($list_res, 0); // Ensure pointer is at start
             while ($row = mysqli_fetch_assoc($list_res)): 
+                // Prepare search data: ID + category + description (lowercase for JS matching)
+                $search_data = strtolower((int)$row['complaint_id'] . ' ' . $row['category'] . ' ' . $row['description']);
+
                 // Fetch lat/lng for this complaint since not in main SELECT
                 $loc_sql = "SELECT location_lat, location_lng FROM complaints WHERE complaint_id = ?";
                 $stmt_loc = mysqli_prepare($conn, $loc_sql);
@@ -208,13 +219,16 @@ if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
                     </div>';
                 }
 
-                // Due date display
+                // FIXED: Due date display with timezone-safe calculation
                 $due_display = '';
                 if ($row['action_due']): 
-                    $current_date = date('Y-m-d');
-                    // Use formatLocalDate to ensure timezone is correct
-                    $due_local = formatLocalDate($row['action_due'], 'Y-m-d');
-                    $days_until_due = (strtotime($due_local) - strtotime($current_date)) / (60 * 60 * 24);
+                    $utc_tz = new DateTimeZone('UTC');
+                    $manila_tz = new DateTimeZone('Asia/Manila');
+                    $due_dt = new DateTime($row['action_due'], $utc_tz);
+                    $due_dt->setTimezone($manila_tz);
+                    $current_dt = new DateTime('now', $manila_tz);
+                    $interval = $due_dt->diff($current_dt);
+                    $days_until_due = $interval->days * ($due_dt > $current_dt ? 1 : -1);  // Positive/negative for past/future
                     
                     $due_class = 'bg-green-50 text-green-700 border border-green-200';
                     if ($days_until_due < 0) {
@@ -227,7 +241,7 @@ if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 mr-1 flex-shrink-0">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                         </svg>
-                        Due: ' . htmlspecialchars(formatLocalDate($row['action_due'], 'M d, Y')) . '
+                        Due: ' . $due_dt->format('M d, Y') . '
                     </span>';
                 endif;
 
@@ -318,7 +332,7 @@ if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
                     return strtotime($a['timestamp']) - strtotime($b['timestamp']);
                 });
             ?>
-                <div class="complaint-card" data-status="<?php echo htmlspecialchars($row['status']); ?>" data-category="<?php echo htmlspecialchars($row['category']); ?>" data-description="<?php echo htmlspecialchars(strtolower($row['description'])); ?>">
+                <div class="complaint-card" data-status="<?php echo htmlspecialchars($row['status']); ?>" data-category="<?php echo htmlspecialchars($row['category']); ?>" data-description="<?php echo htmlspecialchars(strtolower($row['description'])); ?>" data-search="<?php echo htmlspecialchars($search_data); ?>">
                     <button type="button" class="w-full p-4 flex justify-between items-center bg-gray-50 hover:bg-gray-100 focus:outline-none" onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180');">
                         <div class="flex items-center space-x-3">
                             <h3 class="text-base font-semibold text-gray-900">Complaint #<?php echo (int)$row['complaint_id']; ?> - <?php echo htmlspecialchars($row['category']); ?></h3>
@@ -560,9 +574,9 @@ if (isset($list_res) && isset($total_rows) && $total_rows > 0) {
             cards.forEach(card => {
                 const status = card.dataset.status.toLowerCase();
                 const category = card.dataset.category.toLowerCase();
-                const description = card.dataset.description;
+                const searchData = card.dataset.search || '';
 
-                const matchesSearch = description.includes(searchTerm);
+                const matchesSearch = searchTerm === '' || searchData.includes(searchTerm);
                 const matchesStatus = !selectedStatus || status === selectedStatus.toLowerCase();
                 const matchesCategory = !selectedCategory || category === selectedCategory.toLowerCase();
 

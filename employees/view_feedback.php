@@ -98,7 +98,6 @@ if ($selected_user_id) {
         .avatar-glow { position: relative; cursor: pointer; }
         .avatar-glow::before { content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px; background: linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #3b82f6); border-radius: 50%; z-index: -1; opacity: 0; transition: opacity 0.3s ease; }
         .avatar-glow:hover::before { opacity: 1; }
-        .notification-badge { position: absolute; top: -2px; right: -2px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); }
         .group:hover .fa-chevron-down { transform: rotate(180deg); transition: transform 0.2s ease; }
         @keyframes gentle-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .animate-gentle-pulse { animation: gentle-pulse 2s infinite; }
@@ -182,12 +181,6 @@ if ($selected_user_id) {
                     <div class="flex items-center justify-between">
                         <div></div>
                         <div class="flex items-center space-x-4">
-                            <button class="relative p-2 text-gray-600 hover:text-gray-900 transition-all duration-200 rounded-full hover:bg-gray-100 group" id="notificationBtn">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0M3.124 7.5A8.969 8.969 0 0 1 5.292 3m13.416 0a8.969 8.969 0 0 1 2.168 4.5" />
-                                </svg>
-                                <div class="notification-badge">3</div>
-                            </button>
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
@@ -361,14 +354,6 @@ if ($selected_user_id) {
 
         document.addEventListener('click', function() {
             hideProfileDropdown();
-        });
-
-        // Notification
-        document.getElementById('notificationBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => this.style.transform = 'scale(1)', 150);
-            alert('Notifications feature coming soon!');
         });
 
         // Card click
