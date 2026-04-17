@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Manila');
 include 'session_check.php';
 
 // ---------------------------
@@ -268,7 +269,7 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                             <option value="delete" <?php if ($action_filter === 'delete') echo 'selected'; ?>>Delete</option>
                         </select>
 
-                        <!-- ✅ Updated: now includes announcement -->
+                        
                         <select name="entity" class="px-5 py-3 border border-gray-300 rounded-xl focus:outline-none">
                             <option value="">All Entities</option>
                             <option value="complaint"    <?php if ($entity_filter === 'complaint')    echo 'selected'; ?>>Complaint</option>
@@ -335,7 +336,11 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
 
                                             if (!empty($newv['resolved_at']) && ($oldv['resolved_at'] ?? '') !== $newv['resolved_at']) {
                                                 $changes_html .= "<div>• <strong>Resolved At:</strong> " .
-                                                                 date('M j, Y g:i A', strtotime($newv['resolved_at'])) . "</div>";
+                                                                 (function($ts) {
+                                                                     $dt = new DateTime($ts, new DateTimeZone('UTC'));
+                                                                     $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                                                     return $dt->format('M j, Y g:i A');
+                                                                 })($newv['resolved_at']) . "</div>";
                                                 $has_change = true;
                                             }
 
@@ -361,10 +366,14 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                                                 $ann_html    .= "<div><strong class='text-green-700'>Announcement Created</strong></div>";
                                                 if (!empty($newv['title']))
                                                     $ann_html .= "<div>• <strong>Title:</strong> " . htmlspecialchars($newv['title']) . "</div>";
-                                                if (!empty($newv['start_date']))
-                                                    $ann_html .= "<div>• <strong>Start:</strong> " . htmlspecialchars($newv['start_date']) . (!empty($newv['start_time']) ? ' ' . htmlspecialchars($newv['start_time']) : '') . "</div>";
-                                                if (!empty($newv['end_date']))
-                                                    $ann_html .= "<div>• <strong>End:</strong> " . htmlspecialchars($newv['end_date']) . (!empty($newv['end_time']) ? ' ' . htmlspecialchars($newv['end_time']) : '') . "</div>";
+                                                if (!empty($newv['start_date'])) {
+                                                    $start_str = $newv['start_date'] . (!empty($newv['start_time']) ? ' ' . $newv['start_time'] : '');
+                                                    $ann_html .= "<div>• <strong>Start:</strong> " . date('M j, Y g:i A', strtotime($start_str)) . "</div>";
+                                                }
+                                                if (!empty($newv['end_date'])) {
+                                                    $end_str = $newv['end_date'] . (!empty($newv['end_time']) ? ' ' . $newv['end_time'] : '');
+                                                    $ann_html .= "<div>• <strong>End:</strong> " . date('M j, Y g:i A', strtotime($end_str)) . "</div>";
+                                                }
                                                 if (!empty($newv['affected_areas']))
                                                     $ann_html .= "<div>• <strong>Affected Areas:</strong> " . htmlspecialchars($newv['affected_areas']) . "</div>";
                                                 $ann_html    .= "</div>";
@@ -425,7 +434,11 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                                     ?>
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                                            <?php echo date('M j, Y g:i:s A', strtotime($log['created_at'])); ?>
+                                            <?php
+                                            $dt = new DateTime($log['created_at'], new DateTimeZone('UTC'));
+                                            $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                            echo $dt->format('M j, Y g:i A');
+                                            ?>
                                         </td>
                                         <td class="px-6 py-4 text-sm font-medium">
                                             <?php echo htmlspecialchars($log['staff_name'] ?? 'System'); ?>

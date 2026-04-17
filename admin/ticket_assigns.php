@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Manila');
 include 'session_check.php';
 
 // ---------------------------
@@ -375,7 +376,11 @@ $all_complainants = mysqli_fetch_all($users_result, MYSQLI_ASSOC);
                                 </div>
                                 <div class="space-y-1">
                                     <p class="text-xs text-gray-400 font-medium uppercase">Date Reported</p>
-                                    <p class="text-sm text-gray-600"><?= date('M j, Y • g:i A', strtotime($comp['created_at'])) ?></p>
+                                    <?php
+                                        $dt = new DateTime($comp['created_at'], new DateTimeZone('UTC'));
+                                        $dt->setTimezone(new DateTimeZone('Asia/Manila'));
+                                    ?>
+                                    <p class="text-sm text-gray-600"><?= $dt->format('M j, Y • g:i A') ?></p>
                                 </div>
                                 <div class="space-y-1">
                                     <p class="text-xs text-gray-400 font-medium uppercase">Assigned To</p>
