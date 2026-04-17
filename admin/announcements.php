@@ -1,5 +1,5 @@
 <?php
-include 'session_check.php'; // From Step 2 (now fixed with session_name)
+include 'session_check.php';
 
 // Helper for flash messages
 function setFlash($type, $msg) {
@@ -13,6 +13,21 @@ function getAndClearFlash() {
     $alerts = $_SESSION['flash_alerts'] ?? [];
     unset($_SESSION['flash_alerts']);
     return $alerts;
+}
+
+// ---------------------------
+// Audit Log Helper
+// ---------------------------
+function logAudit($conn, $staff_id, $action, $entity_type, $entity_id, $details, $old_values = null, $new_values = null) {
+    $query = "INSERT INTO audit_logs (staff_id, action, entity_type, entity_id, details, old_values, new_values, created_at) 
+              VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
+    $stmt = mysqli_prepare($conn, $query);
+    mysqli_stmt_bind_param($stmt, "ississs",
+        $staff_id, $action, $entity_type, $entity_id,
+        $details, $old_values, $new_values
+    );
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
 }
 
 // AJAX handler for edit data (use ?get_edit=id)
@@ -51,7 +66,7 @@ function sanitize($value) {
 
 function get_avatar_src($profile_picture, $name) {
     if ($profile_picture) {
-        return '../' . $profile_picture; // Adjust for admin/ subfolder
+        return '../' . $profile_picture;
     }
     return 'https://ui-avatars.com/api/?background=3b82f6&color=fff&name=' . urlencode($name);
 }
@@ -100,25 +115,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = sanitize($_POST['action'] ?? '');
 
+    // ========================
+    // CREATE
+    // ========================
     if ($action === 'create') {
-        $title = sanitize($_POST['title']);
-        $description = sanitize($_POST['description']);
-        $start_date = sanitize($_POST['start_date']);
-        $end_date = sanitize($_POST['end_date']);
-        $start_time = sanitize($_POST['start_time'] ?? '');
-        $end_time = sanitize($_POST['end_time'] ?? '');
+        $title          = sanitize($_POST['title']);
+        $description    = sanitize($_POST['description']);
+        $start_date     = sanitize($_POST['start_date']);
+        $end_date       = sanitize($_POST['end_date']);
+        $start_time     = sanitize($_POST['start_time'] ?? '');
+        $end_time       = sanitize($_POST['end_time'] ?? '');
         $affected_areas = sanitize($_POST['affected_areas']);
 
-        // Handle null times
-        $start_time = $start_time ? $start_time : null;
-        $end_time = $end_time ? $end_time : null;
+        $start_time = $start_time ?: null;
+        $end_time   = $end_time   ?: null;
 
         $image_path = null;
         if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
             $file_extension = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
             if (in_array($file_extension, ['jpg', 'jpeg', 'png', 'gif'])) {
                 $new_filename = uniqid() . '.' . $file_extension;
-                $image_path = 'uploads/announcements/' . $new_filename;
+                $image_path   = 'uploads/announcements/' . $new_filename;
                 if (!move_uploaded_file($_FILES['image']['tmp_name'], '../' . $image_path)) {
                     setFlash('error', 'Failed to upload image.');
                     header('Location: announcements.php');
@@ -131,22 +148,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $query = "INSERT INTO announcements (title, description, start_date, end_date, start_time, end_time, affected_areas, image_path, staff_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $query = "INSERT INTO announcements (title, description, start_date, end_date, start_time, end_time, affected_areas, image_path, staff_id) 
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = mysqli_prepare($conn, $query);
-        mysqli_stmt_bind_param($stmt, "sssssssss", $title, $description, $start_date, $end_date, $start_time, $end_time, $affected_areas, $image_path, $staff_id);
+        mysqli_stmt_bind_param($stmt, "ssssssssi",
+            $title, $description, $start_date, $end_date,
+            $start_time, $end_time, $affected_areas, $image_path, $staff_id
+        );
+
         if (mysqli_stmt_execute($stmt)) {
+            $new_ann_id = mysqli_insert_id($conn);
+
+            // ✅ AUDIT LOG — CREATE
+            logAudit(
+                $conn,
+                $staff_id,
+                'create',
+                'announcement',
+                $new_ann_id,
+                'Created announcement: ' . $title,
+                null,
+                json_encode([
+                    'title'          => $title,
+                    'description'    => $description,
+                    'start_date'     => $start_date,
+                    'end_date'       => $end_date,
+                    'start_time'     => $start_time,
+                    'end_time'       => $end_time,
+                    'affected_areas' => $affected_areas,
+                    'image_path'     => $image_path,
+                ])
+            );
+
             setFlash('success', 'Announcement created successfully.');
         } else {
             setFlash('error', 'Failed to create announcement.');
-            // Delete uploaded file if query fails
             if ($image_path && file_exists('../' . $image_path)) {
                 unlink('../' . $image_path);
             }
         }
         mysqli_stmt_close($stmt);
-        header('Location: announcements.php'); // PRG redirect
+        header('Location: announcements.php');
         exit();
 
+    // ========================
+    // EDIT / UPDATE
+    // ========================
     } elseif ($action === 'edit') {
         $id = (int)($_POST['id'] ?? 0);
         if ($id <= 0) {
@@ -155,37 +202,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        $title = sanitize($_POST['title']);
-        $description = sanitize($_POST['description']);
-        $start_date = sanitize($_POST['start_date']);
-        $end_date = sanitize($_POST['end_date']);
-        $start_time = sanitize($_POST['start_time'] ?? '');
-        $end_time = sanitize($_POST['end_time'] ?? '');
+        $title          = sanitize($_POST['title']);
+        $description    = sanitize($_POST['description']);
+        $start_date     = sanitize($_POST['start_date']);
+        $end_date       = sanitize($_POST['end_date']);
+        $start_time     = sanitize($_POST['start_time'] ?? '');
+        $end_time       = sanitize($_POST['end_time'] ?? '');
         $affected_areas = sanitize($_POST['affected_areas']);
 
-        // Handle null times
-        $start_time = $start_time ? $start_time : null;
-        $end_time = $end_time ? $end_time : null;
+        $start_time = $start_time ?: null;
+        $end_time   = $end_time   ?: null;
 
-        $image_path = null;
+        // ✅ Fetch OLD values BEFORE update (for audit log)
+        $old_query = "SELECT title, description, start_date, end_date, start_time, end_time, affected_areas, image_path FROM announcements WHERE id = ?";
+        $old_stmt  = mysqli_prepare($conn, $old_query);
+        mysqli_stmt_bind_param($old_stmt, "i", $id);
+        mysqli_stmt_execute($old_stmt);
+        $old_data = mysqli_fetch_assoc(mysqli_stmt_get_result($old_stmt));
+        mysqli_stmt_close($old_stmt);
+
+        $image_path     = null;
         $old_image_path = null;
+
         if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-            // Get old image path
-            $old_query = "SELECT image_path FROM announcements WHERE id = ?";
-            $old_stmt = mysqli_prepare($conn, $old_query);
-            mysqli_stmt_bind_param($old_stmt, "i", $id);
-            mysqli_stmt_execute($old_stmt);
-            $old_result = mysqli_stmt_get_result($old_stmt);
-            $old_ann = mysqli_fetch_assoc($old_result);
-            $old_image_path = $old_ann['image_path'] ?? null;
-            mysqli_stmt_close($old_stmt);
+            $old_image_path = $old_data['image_path'] ?? null;
 
             $file_extension = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
             if (in_array($file_extension, ['jpg', 'jpeg', 'png', 'gif'])) {
                 $new_filename = uniqid() . '.' . $file_extension;
-                $image_path = 'uploads/announcements/' . $new_filename;
+                $image_path   = 'uploads/announcements/' . $new_filename;
                 if (move_uploaded_file($_FILES['image']['tmp_name'], '../' . $image_path)) {
-                    // Delete old image
                     if ($old_image_path && file_exists('../' . $old_image_path)) {
                         unlink('../' . $old_image_path);
                     }
@@ -201,33 +247,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        $query = "UPDATE announcements SET title = ?, description = ?, start_date = ?, end_date = ?, start_time = ?, end_time = ?, affected_areas = ?";
+        $query  = "UPDATE announcements SET title = ?, description = ?, start_date = ?, end_date = ?, start_time = ?, end_time = ?, affected_areas = ?";
         $params = [$title, $description, $start_date, $end_date, $start_time, $end_time, $affected_areas];
-        $types = "sssssss";
+        $types  = "sssssss";
+
         if ($image_path) {
-            $query .= ", image_path = ?";
+            $query   .= ", image_path = ?";
             $params[] = $image_path;
-            $types .= "s";
+            $types   .= "s";
         }
-        $query .= " WHERE id = ?";
+        $query   .= " WHERE id = ?";
         $params[] = $id;
-        $types .= "i";
+        $types   .= "i";
 
         $stmt = mysqli_prepare($conn, $query);
         mysqli_stmt_bind_param($stmt, $types, ...$params);
+
         if (mysqli_stmt_execute($stmt)) {
+            // ✅ AUDIT LOG — UPDATE
+            logAudit(
+                $conn,
+                $staff_id,
+                'update',
+                'announcement',
+                $id,
+                'Updated announcement: ' . $title,
+                json_encode($old_data),
+                json_encode([
+                    'title'          => $title,
+                    'description'    => $description,
+                    'start_date'     => $start_date,
+                    'end_date'       => $end_date,
+                    'start_time'     => $start_time,
+                    'end_time'       => $end_time,
+                    'affected_areas' => $affected_areas,
+                    'image_path'     => $image_path ?? ($old_data['image_path'] ?? null),
+                ])
+            );
+
             setFlash('success', 'Announcement updated successfully.');
         } else {
             setFlash('error', 'Failed to update announcement.');
-            // Delete new image if query fails
             if ($image_path && file_exists('../' . $image_path)) {
                 unlink('../' . $image_path);
             }
         }
         mysqli_stmt_close($stmt);
-        header('Location: announcements.php'); // PRG redirect
+        header('Location: announcements.php');
         exit();
 
+    // ========================
+    // DELETE
+    // ========================
     } elseif ($action === 'delete') {
         $id = (int)($_POST['id'] ?? 0);
         if ($id <= 0) {
@@ -236,29 +307,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit();
         }
 
-        // Get image path
-        $img_query = "SELECT image_path FROM announcements WHERE id = ?";
-        $img_stmt = mysqli_prepare($conn, $img_query);
+        // Get full record before deleting (for audit log)
+        $img_query = "SELECT * FROM announcements WHERE id = ?";
+        $img_stmt  = mysqli_prepare($conn, $img_query);
         mysqli_stmt_bind_param($img_stmt, "i", $id);
         mysqli_stmt_execute($img_stmt);
         $img_result = mysqli_stmt_get_result($img_stmt);
-        $ann = mysqli_fetch_assoc($img_result);
+        $ann        = mysqli_fetch_assoc($img_result);
         $image_path = $ann['image_path'] ?? null;
         mysqli_stmt_close($img_stmt);
 
         $query = "DELETE FROM announcements WHERE id = ?";
-        $stmt = mysqli_prepare($conn, $query);
+        $stmt  = mysqli_prepare($conn, $query);
         mysqli_stmt_bind_param($stmt, "i", $id);
+
         if (mysqli_stmt_execute($stmt)) {
             if ($image_path && file_exists('../' . $image_path)) {
                 unlink('../' . $image_path);
             }
+
+            // ✅ AUDIT LOG — DELETE
+            logAudit(
+                $conn,
+                $staff_id,
+                'delete',
+                'announcement',
+                $id,
+                'Deleted announcement: ' . ($ann['title'] ?? 'ID ' . $id),
+                json_encode($ann),
+                null
+            );
+
             setFlash('success', 'Announcement deleted successfully.');
         } else {
             setFlash('error', 'Failed to delete announcement.');
         }
         mysqli_stmt_close($stmt);
-        header('Location: announcements.php'); // PRG redirect
+        header('Location: announcements.php');
         exit();
     }
 }
@@ -276,12 +361,12 @@ $announcements = [];
 $now = new DateTime();
 while ($row = mysqli_fetch_assoc($announcements_result)) {
     $start_str = $row['start_date'] . ($row['start_time'] ? ' ' . $row['start_time'] : ' 00:00:00');
-    $end_str = $row['end_date'] . ($row['end_time'] ? ' ' . $row['end_time'] : ' 23:59:59');
-    $start = new DateTime($start_str);
-    $end = new DateTime($end_str);
-    $row['status'] = ($now >= $start && $now <= $end) ? 'Active' : (($start > $now) ? 'Upcoming' : 'Expired');
+    $end_str   = $row['end_date']   . ($row['end_time']   ? ' ' . $row['end_time']   : ' 23:59:59');
+    $start     = new DateTime($start_str);
+    $end       = new DateTime($end_str);
+    $row['status']          = ($now >= $start && $now <= $end) ? 'Active' : (($start > $now) ? 'Upcoming' : 'Expired');
     $row['formatted_start'] = date('M j, Y g:i A', strtotime($start_str));
-    $row['formatted_end'] = date('M j, Y g:i A', strtotime($end_str));
+    $row['formatted_end']   = date('M j, Y g:i A', strtotime($end_str));
     $row['formatted_range'] = $row['formatted_start'] . ' – ' . $row['formatted_end'];
     if (!$row['start_time']) {
         $row['formatted_range'] = date('M j', strtotime($row['start_date'])) . ' – ' . date('M j, Y', strtotime($row['end_date']));
@@ -292,13 +377,13 @@ while ($row = mysqli_fetch_assoc($announcements_result)) {
 // Fetch for edit modal if id provided
 $edit_ann = null;
 if (isset($_GET['edit'])) {
-    $edit_id = (int)$_GET['edit'];
+    $edit_id   = (int)$_GET['edit'];
     $edit_query = "SELECT * FROM announcements WHERE id = ?";
-    $edit_stmt = mysqli_prepare($conn, $edit_query);
+    $edit_stmt  = mysqli_prepare($conn, $edit_query);
     mysqli_stmt_bind_param($edit_stmt, "i", $edit_id);
     mysqli_stmt_execute($edit_stmt);
     $edit_result = mysqli_stmt_get_result($edit_stmt);
-    $edit_ann = mysqli_fetch_assoc($edit_result);
+    $edit_ann    = mysqli_fetch_assoc($edit_result);
     mysqli_stmt_close($edit_stmt);
 }
 ?>
@@ -318,7 +403,8 @@ if (isset($_GET['edit'])) {
 </head>
 <body class="bg-gray-50">
     <div class="min-h-screen flex">
-        <!-- Sidebar (unchanged) -->
+
+        <!-- ==================== SIDEBAR ==================== -->
         <div class="sidebar w-64 bg-white shadow-lg fixed h-full z-30">
             <div class="flex flex-col h-full">
                 <div class="p-6">
@@ -331,7 +417,6 @@ if (isset($_GET['edit'])) {
                     </div>
                 </div>
 
-                <!-- Navigation -->
                 <nav class="flex-1 py-2 px-4 space-y-2">
                     <a href="dashboard.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="dashboard-icon mr-3">
@@ -344,6 +429,12 @@ if (isset($_GET['edit'])) {
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                         </svg>
                         Manage Complaints
+                    </a>
+                    <a href="ticket_assigns.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="mr-3 w-5 h-5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 0 1 0 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 0 1 0-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375Z" />
+                        </svg>
+                        Ticket Assigns
                     </a>
                     <a href="manage_staff.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="profile-icon mr-3">
@@ -359,7 +450,7 @@ if (isset($_GET['edit'])) {
                     </a>
                     <a href="view_feedback.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="feedback-icon mr-3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01 .778-.332 48.294 48.294 0 0 1 5.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 1 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0Zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
                         </svg>
                         View Feedback
                     </a>
@@ -368,6 +459,12 @@ if (isset($_GET['edit'])) {
                             <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46" />
                         </svg>
                         Announcement Section
+                    </a>
+                    <a href="audit_logs.php" class="flex items-center px-4 py-3 text-sm font-medium rounded-xl text-gray-700 hover:bg-gray-100 hover:text-blue-600 transition-all duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="mr-3 w-5 h-5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0 1 18 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375m-8.25-3 1.5 1.5 3-3.75" />
+                        </svg>
+                        Audit Logs
                     </a>
                 </nav>
 
@@ -393,17 +490,13 @@ if (isset($_GET['edit'])) {
             </div>
         </div>
 
-        <!-- Main (unchanged except for the table and modals below) -->
+        <!-- ==================== MAIN CONTENT ==================== -->
         <div class="flex-1">
             <header class="header-2025 sticky top-0 z-20">
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
-                        <!-- Left: Clean & Minimal -->
+                        <div class="flex items-center space-x-4"></div>
                         <div class="flex items-center space-x-4">
-                        </div>
-                        <!-- Right: Essential Actions -->
-                        <div class="flex items-center space-x-4">
-                            <!-- Profile Dropdown -->
                             <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
                                 <div class="avatar-glow">
                                     <img src="<?php echo htmlspecialchars(get_avatar_src($staff['profile_picture'], $staff['name'])); ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover"/>
@@ -459,18 +552,18 @@ if (isset($_GET['edit'])) {
                                         <td class="px-3 py-4 text-sm text-gray-600" title="<?php echo htmlspecialchars($ann['description']); ?>">
                                             <?php echo htmlspecialchars(substr($ann['description'], 0, 100)) . (strlen($ann['description']) > 100 ? '...' : ''); ?>
                                         </td>
-                                        <td class="px-3 py-4 text-sm text-gray-500 sm:whitespace-nowrap" title="<?php echo htmlspecialchars($ann['formatted_range']); ?>">
+                                        <td class="px-3 py-4 text-sm text-gray-500 sm:whitespace-nowrap">
                                             <?php echo htmlspecialchars($ann['formatted_range']); ?>
                                         </td>
                                         <td class="px-3 py-4 whitespace-nowrap">
                                             <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php 
-                                                echo $ann['status'] === 'Active' ? 'bg-green-100 text-green-800' : 
-                                                     ($ann['status'] === 'Upcoming' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'); 
+                                                echo $ann['status'] === 'Active'   ? 'bg-green-100 text-green-800'  : 
+                                                    ($ann['status'] === 'Upcoming' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'); 
                                             ?>">
                                                 <?php echo htmlspecialchars($ann['status']); ?>
                                             </span>
                                         </td>
-                                        <td class="px-3 py-4 text-sm text-gray-500 sm:whitespace-nowrap sm:truncate max-w-xs">
+                                        <td class="px-3 py-4 text-sm text-gray-500 sm:whitespace-nowrap">
                                             <?php echo htmlspecialchars($ann['staff_name']); ?>
                                         </td>
                                         <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -484,7 +577,7 @@ if (isset($_GET['edit'])) {
                                             <button onclick="openModal('editModal', <?php echo $ann['id']; ?>)" class="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50 transition-colors" title="Edit">
                                                 <i class="fas fa-edit text-sm"></i>
                                             </button>
-                                            <form method="POST" class="delete-form inline-block" style="display: inline;">
+                                            <form method="POST" class="delete-form inline-block">
                                                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
                                                 <input type="hidden" name="action" value="delete">
                                                 <input type="hidden" name="id" value="<?php echo $ann['id']; ?>">
@@ -503,7 +596,7 @@ if (isset($_GET['edit'])) {
         </div>
     </div>
 
-    <!-- Create/Edit Modal (unchanged) -->
+    <!-- ==================== CREATE MODAL ==================== -->
     <div id="createModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-xl shadow-lg max-w-md w-full max-h-screen overflow-y-auto">
             <div class="p-6">
@@ -554,7 +647,7 @@ if (isset($_GET['edit'])) {
         </div>
     </div>
 
-    <!-- Edit Modal (similar structure, populated via JS/PHP) -->
+    <!-- ==================== EDIT MODAL ==================== -->
     <div id="editModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-xl shadow-lg max-w-md w-full max-h-screen overflow-y-auto">
             <div class="p-6">
@@ -606,7 +699,7 @@ if (isset($_GET['edit'])) {
         </div>
     </div>
 
-    <!-- Image View Modal -->
+    <!-- ==================== IMAGE VIEW MODAL ==================== -->
     <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
         <div class="relative max-w-2xl w-full max-h-[80vh] mx-auto overflow-hidden">
             <button onclick="closeModal('imageModal')" class="absolute top-4 right-4 z-10 text-white hover:text-gray-200 text-2xl font-bold bg-black bg-opacity-50 rounded-full w-10 h-10 flex items-center justify-center">
@@ -633,7 +726,6 @@ if (isset($_GET['edit'])) {
             sidebar.classList.toggle('translate-x-0');
         });
 
-        // Responsive sidebar
         window.addEventListener('resize', function() {
             const sidebar = document.querySelector('.sidebar');
             if (window.innerWidth >= 768) {
@@ -643,8 +735,8 @@ if (isset($_GET['edit'])) {
             }
         });
 
-        // Profile dropdown (same as dashboard)
-        const profileDropdown = document.getElementById('profileDropdown');
+        // Profile dropdown
+        const profileDropdown     = document.getElementById('profileDropdown');
         const profileDropdownMenu = document.getElementById('profileDropdownMenu');
 
         profileDropdown.addEventListener('click', function(e) {
@@ -668,7 +760,7 @@ if (isset($_GET['edit'])) {
                 profileDropdownMenu.classList.remove('hidden');
                 const rect = profileDropdown.getBoundingClientRect();
                 profileDropdownMenu.style.right = '1.5rem';
-                profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
+                profileDropdownMenu.style.top   = `${rect.bottom + 8}px`;
             } else {
                 profileDropdownMenu.classList.add('hidden');
             }
@@ -678,7 +770,7 @@ if (isset($_GET['edit'])) {
             profileDropdownMenu.classList.add('hidden');
         });
 
-        // Handle delete confirmations with SweetAlert2
+        // Delete confirmation
         document.addEventListener('submit', function(e) {
             if (e.target.classList.contains('delete-form')) {
                 e.preventDefault();
@@ -698,40 +790,29 @@ if (isset($_GET['edit'])) {
             }
         });
 
-        // Modal functions
+        // Modal helpers
         function openModal(modalId, editId = null) {
-            const modal = document.getElementById(modalId);
-            modal.classList.remove('hidden');
+            document.getElementById(modalId).classList.remove('hidden');
             if (modalId === 'editModal' && editId) {
-                // Fetch edit data via AJAX
                 fetch(`?get_edit=${editId}`)
-                    .then(response => response.json())
+                    .then(r => r.json())
                     .then(data => {
                         if (data.success && data.data) {
-                            document.getElementById('editId').value = data.data.id;
-                            document.getElementById('editTitle').value = data.data.title;
-                            document.getElementById('editDescription').value = data.data.description;
-                            document.getElementById('editStartDate').value = data.data.start_date;
-                            document.getElementById('editEndDate').value = data.data.end_date;
-                            document.getElementById('editStartTime').value = data.data.start_time || '';
-                            document.getElementById('editEndTime').value = data.data.end_time || '';
+                            document.getElementById('editId').value           = data.data.id;
+                            document.getElementById('editTitle').value        = data.data.title;
+                            document.getElementById('editDescription').value  = data.data.description;
+                            document.getElementById('editStartDate').value    = data.data.start_date;
+                            document.getElementById('editEndDate').value      = data.data.end_date;
+                            document.getElementById('editStartTime').value    = data.data.start_time    || '';
+                            document.getElementById('editEndTime').value      = data.data.end_time      || '';
                             document.getElementById('editAffectedAreas').value = data.data.affected_areas || '';
                         } else {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Oops...',
-                                text: data.message || 'Failed to load announcement data.'
-                            });
+                            Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Failed to load data.' });
                             closeModal('editModal');
                         }
                     })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        Swal.fire({
-                            icon: 'error',
-                            title: 'Oops...',
-                            text: 'Error loading announcement data.'
-                        });
+                    .catch(() => {
+                        Swal.fire({ icon: 'error', title: 'Error', text: 'Error loading announcement data.' });
                         closeModal('editModal');
                     });
             }
@@ -739,63 +820,52 @@ if (isset($_GET['edit'])) {
 
         function closeModal(modalId) {
             document.getElementById(modalId).classList.add('hidden');
-            // Reset form
-            if (modalId === 'createModal' || modalId === 'editModal') {
-                const form = document.getElementById(modalId === 'createModal' ? 'createForm' : 'editForm');
-                form.reset();
-            }
+            if (modalId === 'createModal') document.getElementById('createForm').reset();
+            if (modalId === 'editModal')   document.getElementById('editForm').reset();
         }
 
-        // Image view function
         function viewImage(src) {
             document.getElementById('imageModalImg').src = src;
             document.getElementById('imageModal').classList.remove('hidden');
         }
 
-        // Close modals on outside click
         window.onclick = function(event) {
-            const modals = document.querySelectorAll('.fixed.inset-0');
-            modals.forEach(modal => {
-                if (event.target === modal) {
-                    closeModal(modal.id);
-                }
+            document.querySelectorAll('.fixed.inset-0').forEach(modal => {
+                if (event.target === modal) closeModal(modal.id);
             });
-        }
+        };
 
-        // Show alerts with SweetAlert2
+        // Flash alerts
         document.addEventListener('DOMContentLoaded', function() {
             <?php if (!empty($alerts)): ?>
                 <?php foreach ($alerts as $a): ?>
                     Swal.fire({
                         icon: '<?php echo $a['type']; ?>',
                         title: '<?php echo ucfirst($a['type']); ?>',
-                        text: '<?php echo htmlspecialchars($a['msg']); ?>',
+                        text: '<?php echo addslashes(htmlspecialchars($a['msg'])); ?>',
                         timer: 3000,
                         showConfirmButton: false
                     });
                 <?php endforeach; ?>
             <?php endif; ?>
 
-            // If edit from URL
             <?php if ($edit_ann): ?>
-                document.getElementById('editId').value = '<?php echo $edit_ann['id']; ?>';
-                document.getElementById('editTitle').value = '<?php echo htmlspecialchars($edit_ann['title']); ?>';
-                document.getElementById('editDescription').value = '<?php echo htmlspecialchars($edit_ann['description']); ?>';
-                document.getElementById('editStartDate').value = '<?php echo $edit_ann['start_date']; ?>';
-                document.getElementById('editEndDate').value = '<?php echo $edit_ann['end_date']; ?>';
-                document.getElementById('editStartTime').value = '<?php echo htmlspecialchars($edit_ann['start_time'] ?? ''); ?>';
-                document.getElementById('editEndTime').value = '<?php echo htmlspecialchars($edit_ann['end_time'] ?? ''); ?>';
-                document.getElementById('editAffectedAreas').value = '<?php echo htmlspecialchars($edit_ann['affected_areas'] ?? ''); ?>';
+                document.getElementById('editId').value            = '<?php echo $edit_ann['id']; ?>';
+                document.getElementById('editTitle').value          = '<?php echo addslashes(htmlspecialchars($edit_ann['title'])); ?>';
+                document.getElementById('editDescription').value    = '<?php echo addslashes(htmlspecialchars($edit_ann['description'])); ?>';
+                document.getElementById('editStartDate').value      = '<?php echo $edit_ann['start_date']; ?>';
+                document.getElementById('editEndDate').value        = '<?php echo $edit_ann['end_date']; ?>';
+                document.getElementById('editStartTime').value      = '<?php echo htmlspecialchars($edit_ann['start_time'] ?? ''); ?>';
+                document.getElementById('editEndTime').value        = '<?php echo htmlspecialchars($edit_ann['end_time'] ?? ''); ?>';
+                document.getElementById('editAffectedAreas').value  = '<?php echo addslashes(htmlspecialchars($edit_ann['affected_areas'] ?? '')); ?>';
                 openModal('editModal', <?php echo $edit_ann['id']; ?>);
             <?php endif; ?>
         });
     </script>
-
 </body>
 </html>
 
 <?php
-// Cleanup
 if (isset($stmt)) { mysqli_stmt_close($stmt); }
 mysqli_close($conn);
 ?>
