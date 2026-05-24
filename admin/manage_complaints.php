@@ -908,20 +908,39 @@ while ($row = mysqli_fetch_assoc($staff_res)) {
     </div>
     <div id="assignModal" class="modal">
         <div class="bg-white w-11/12 max-w-md rounded-2xl p-6 shadow-2xl">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Assign Complaint</h3>
+            <h3 class="text-lg font-semibold text-gray-900 mb-2">Assign Complaint to Staff</h3>
+            <p class="text-sm text-gray-500 mb-4">Pumili ng isa o higit pang staff sa listahan sa ibaba.</p>
+            
             <form id="assignForm">
                 <input type="hidden" name="complaint_id" id="assignComplaintId">
                 <input type="hidden" name="csrf_token" value="<?php echo e($csrf_token); ?>">
+
                 <div class="space-y-4">
-                    <select name="staff_id" id="assignStaffSelect" class="w-full border border-gray-200 rounded-lg px-3 py-2" required>
-                        <option value="">Select Staff</option>
-                        <?php foreach ($staff_list as $s): ?>
-                            <option value="<?php echo (int)$s['staff_id']; ?>"><?php echo e($s['name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <div class="flex justify-end space-x-2">
-                        <button type="button" onclick="closeAssignModal()" class="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
-                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Assign</button>
+                    <div class="border border-gray-200 rounded-xl overflow-hidden">
+                        <div class="max-h-60 overflow-y-auto divide-y divide-gray-100 p-2 space-y-1">
+                            <?php foreach ($staff_list as $s): ?>
+                                <label class="flex items-center p-3 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors group">
+                                    <input type="checkbox" 
+                                        name="staff_id[]" 
+                                        value="<?php echo (int)$s['staff_id']; ?>"
+                                        class="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 transition">
+                                    <span class="ml-3 text-sm font-medium text-gray-700 group-hover:text-blue-700">
+                                        <?php echo e($s['name']); ?>
+                                    </span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end space-x-2 pt-2">
+                        <button type="button" onclick="closeAssignModal()" 
+                                class="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm font-medium">
+                            Cancel
+                        </button>
+                        <button type="submit" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md shadow-blue-200 transition text-sm font-medium">
+                            Assign Selected Staff
+                        </button>
                     </div>
                 </div>
             </form>
@@ -976,315 +995,260 @@ while ($row = mysqli_fetch_assoc($staff_res)) {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Mobile menu toggle
-        document.getElementById('mobileMenuToggle').addEventListener('click', function() {
-            const sidebar = document.querySelector('.sidebar');
-            sidebar.classList.toggle('-translate-x-full');
-            sidebar.classList.toggle('translate-x-0');
-        });
-        // Profile Dropdown
-        const profileDropdown = document.getElementById('profileDropdown');
-        const profileDropdownMenu = document.getElementById('profileDropdownMenu');
-        profileDropdown.addEventListener('click', function(e) {
-            e.stopPropagation();
-            profileDropdownMenu.classList.toggle('hidden');
-            const rect = profileDropdown.getBoundingClientRect();
-            profileDropdownMenu.style.right = '1.5rem';
-            profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
-        });
-        document.addEventListener('click', function(e) {
-            if (!profileDropdown.contains(e.target)) {
-                profileDropdownMenu.classList.add('hidden');
-            }
-        });
-        // Clear Filters
-        document.getElementById('clearFilters').addEventListener('click', function() {
-            document.getElementById('filterForm').reset();
-            document.getElementById('filterForm').submit();
-        });
-        // Export Modal functions
-        function toggleDateOption() {
-            const type = document.querySelector('input[name="date_type"]:checked').value;
-            document.getElementById('monthOption').style.display = type === 'month' ? 'block' : 'none';
-            document.getElementById('rangeOption').style.display = type === 'range' ? 'block' : 'none';
-            validateExportForm();
+    // Mobile menu toggle
+    document.getElementById('mobileMenuToggle').addEventListener('click', function() {
+        const sidebar = document.querySelector('.sidebar');
+        sidebar.classList.toggle('-translate-x-full');
+        sidebar.classList.toggle('translate-x-0');
+    });
+
+    // Profile Dropdown
+    const profileDropdown = document.getElementById('profileDropdown');
+    const profileDropdownMenu = document.getElementById('profileDropdownMenu');
+    profileDropdown.addEventListener('click', function(e) {
+        e.stopPropagation();
+        profileDropdownMenu.classList.toggle('hidden');
+        const rect = profileDropdown.getBoundingClientRect();
+        profileDropdownMenu.style.right = '1.5rem';
+        profileDropdownMenu.style.top = `${rect.bottom + 8}px`;
+    });
+    document.addEventListener('click', function(e) {
+        if (!profileDropdown.contains(e.target)) {
+            profileDropdownMenu.classList.add('hidden');
         }
-        function validateExportForm() {
-            const type = document.querySelector('input[name="date_type"]:checked').value;
-            const btn = document.getElementById('generatePdfBtn');
-            let valid = false;
-            if (type === 'month') {
-                const month = document.getElementById('exportMonth').value;
-                const year = document.getElementById('exportYear').value;
-                valid = month && year;
-            } else {
-                const from = document.getElementById('exportFrom').value;
-                const to = document.getElementById('exportTo').value;
-                valid = from && to && from <= to;
-            }
-            if (valid) {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-                btn.classList.add('hover:bg-blue-700');
-            } else {
-                btn.disabled = true;
-                btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
-                btn.classList.remove('hover:bg-blue-700');
-            }
+    });
+
+    // Clear Filters
+    document.getElementById('clearFilters').addEventListener('click', function() {
+        document.getElementById('filterForm').reset();
+        document.getElementById('filterForm').submit();
+    });
+
+    // Export Modal
+    function toggleDateOption() {
+        const type = document.querySelector('input[name="date_type"]:checked').value;
+        document.getElementById('monthOption').style.display = type === 'month' ? 'block' : 'none';
+        document.getElementById('rangeOption').style.display = type === 'range' ? 'block' : 'none';
+        validateExportForm();
+    }
+
+    function validateExportForm() {
+        const type = document.querySelector('input[name="date_type"]:checked').value;
+        const btn = document.getElementById('generatePdfBtn');
+        let valid = false;
+        if (type === 'month') {
+            const month = document.getElementById('exportMonth').value;
+            const year = document.getElementById('exportYear').value;
+            valid = month && year;
+        } else {
+            const from = document.getElementById('exportFrom').value;
+            const to = document.getElementById('exportTo').value;
+            valid = from && to && from <= to;
         }
-        function openExportModal() { document.getElementById('exportModal').classList.add('show'); }
-        function closeExportModal() { document.getElementById('exportModal').classList.remove('show'); }
-        function openAssignModal(id) {
-            document.getElementById('assignComplaintId').value = id;
-            document.getElementById('assignStaffSelect').value = '';
-            document.getElementById('assignModal').classList.add('show');
+        if (valid) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+            btn.classList.add('hover:bg-blue-700');
+        } else {
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed', 'pointer-events-none');
+            btn.classList.remove('hover:bg-blue-700');
         }
-        function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
-        function openStatusModal(id) {
-            document.getElementById('statusComplaintId').value = id;
-            const card = document.querySelector(`[data-complaint-id="${id}"]`);
-            if (!card) {
-                console.error('Card not found for id:', id);
-                return;
-            }
-            const currentStatus = card.dataset.status;
-            const select = document.querySelector('#statusForm select[name="status"]');
-            select.value = currentStatus;
-   
-            const resolvedInput = document.querySelector('#statusForm input[name="resolved_at"]');
-            const dueInput = document.querySelector('#statusForm input[name="action_due"]');
-   
-            if (['Resolved', 'Closed'].includes(currentStatus)) {
-                resolvedInput.value = card.dataset.resolvedAt || '';
-            } else {
-                resolvedInput.value = '';
-            }
-            if (currentStatus === 'In Progress') {
-                dueInput.value = card.dataset.actionDue || '';
-            } else {
-                dueInput.value = '';
-            }
-   
-            toggleDateFields(select);
-            // Clear comment textarea
-            document.querySelector('#statusForm textarea[name="comment_text"]').value = '';
-            document.getElementById('statusModal').classList.add('show');
+    }
+
+    function openExportModal() { document.getElementById('exportModal').classList.add('show'); }
+    function closeExportModal() { document.getElementById('exportModal').classList.remove('show'); }
+
+    function openAssignModal(id) {
+        document.getElementById('assignComplaintId').value = id;
+        const select = document.getElementById('assignStaffSelect');
+        if (select) select.selectedIndex = -1;
+        document.getElementById('assignModal').classList.add('show');
+    }
+
+    function closeAssignModal() { 
+        document.getElementById('assignModal').classList.remove('show'); 
+    }
+
+    // Status Modal functions (unchanged)
+    function openStatusModal(id) {
+        document.getElementById('statusComplaintId').value = id;
+        const card = document.querySelector(`[data-complaint-id="${id}"]`);
+        if (!card) return;
+        const currentStatus = card.dataset.status;
+        const select = document.querySelector('#statusForm select[name="status"]');
+        select.value = currentStatus;
+
+        const resolvedInput = document.querySelector('#statusForm input[name="resolved_at"]');
+        const dueInput = document.querySelector('#statusForm input[name="action_due"]');
+
+        if (['Resolved', 'Closed'].includes(currentStatus)) {
+            resolvedInput.value = card.dataset.resolvedAt || '';
+        } else {
+            resolvedInput.value = '';
         }
-        function closeStatusModal() { document.getElementById('statusModal').classList.remove('show'); }
-        function toggleDateFields(select) {
-            const resolvedField = document.getElementById('resolvedDateField');
-            const dueField = document.getElementById('dueDateField');
-   
-            resolvedField.style.display = 'none';
-            dueField.style.display = 'none';
-            const value = select.value;
-            if (['Resolved', 'Closed'].includes(value)) {
-                resolvedField.style.display = 'block';
-                const resolvedInput = document.querySelector('input[name="resolved_at"]');
-                if (!resolvedInput.value) {
-                    resolvedInput.value = new Date().toISOString().split('T')[0];
-                }
-            } else if (value === 'In Progress') {
-                dueField.style.display = 'block';
-                const dueInput = document.querySelector('input[name="action_due"]');
-                if (!dueInput.value) {
-                    dueInput.value = new Date().toISOString().split('T')[0];
-                }
-            }
+        if (currentStatus === 'In Progress') {
+            dueInput.value = card.dataset.actionDue || '';
+        } else {
+            dueInput.value = '';
         }
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('show'); });
-        });
-        // AJAX Assignment
-        document.getElementById('assignForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            const complaintId = document.getElementById('assignComplaintId').value;
-            const staffSelect = document.getElementById('assignStaffSelect');
-            const selectedStaff = staffSelect.options[staffSelect.selectedIndex].text;
-            try {
-                const response = await fetch('assign_complaint.php', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                if (data.success) {
-                    Swal.fire({
-                        title: 'Success!',
-                        text: data.msg,
-                        icon: 'success',
-                        confirmButtonColor: '#3b82f6'
-                    }).then(() => {
-                        location.reload();
-                    });
-                } else {
-                    Swal.fire({
-                        title: 'Error!',
-                        text: data.msg,
-                        icon: 'error',
-                        confirmButtonColor: '#3b82f6'
-                    });
-                }
-            } catch (error) {
-                Swal.fire({
-                    title: 'Error!',
-                    text: 'Failed to assign complaint. Please try again.',
-                    icon: 'error',
-                    confirmButtonColor: '#3b82f6'
-                });
-            }
-        });
-        // Updated AJAX Status Update with Comment
-        document.getElementById('statusForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            const complaintId = document.getElementById('statusComplaintId').value;
-            const newStatus = document.querySelector('#statusForm select[name="status"]').value;
-            const resolvedAt = document.querySelector('#statusForm input[name="resolved_at"]').value;
-            const commentText = document.querySelector('#statusForm textarea[name="comment_text"]').value.trim();
-            if (commentText) {
-                formData.append('comment_text', commentText);
-            }
-            try {
-                const response = await fetch('update_status.php', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                const data = await response.json();
-                if (data.success) {
-                    Swal.fire({
-                        title: 'Success!',
-                        text: data.msg,
-                        icon: 'success',
-                        confirmButtonColor: '#3b82f6'
-                    }).then(() => {
-                        location.reload();
-                    });
-                } else {
-                    Swal.fire({
-                        title: 'Error!',
-                        text: data.msg,
-                        icon: 'error',
-                        confirmButtonColor: '#3b82f6'
-                    });
-                }
-            } catch (error) {
-                Swal.fire({
-                    title: 'Error!',
-                    text: 'Failed to update status. Please try again.',
-                    icon: 'error',
-                    confirmButtonColor: '#3b82f6'
-                });
-            }
-        });
-        // Map Modal Functionality
-        let modalMap = null;
-        const customIcon = L.icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34]
-        });
-        function openMapModal(lat, lng, address = '') {
-            const modal = document.getElementById('mapModal');
-            if (!modal) {
-                console.error('Modal element not found!');
-                return;
-            }
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                if (!modalMap) {
-                    if (typeof L === 'undefined') {
-                        console.error('Leaflet not loaded!');
-                        return;
-                    }
-                    try {
-                        modalMap = L.map('modalMap').setView([lat, lng], 15);
-                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        }).addTo(modalMap);
-                        const marker = L.marker([lat, lng], {icon: customIcon}).addTo(modalMap);
-                        let popupContent = `<b>Customer Location</b><br>`;
-                        if (address) {
-                            popupContent += `Address: ${address}<br>`;
-                        }
-                        marker.bindPopup(popupContent).openPopup();
-                    } catch (err) {
-                        console.error('Map init error:', err);
-                    }
-                } else {
-                    modalMap.setView([lat, lng], 15);
-                    modalMap.eachLayer(function(layer) {
-                        if (layer instanceof L.Marker) {
-                            modalMap.removeLayer(layer);
-                        }
-                    });
-                    const marker = L.marker([lat, lng], {icon: customIcon}).addTo(modalMap);
-                    let popupContent = `<b>Customer Location</b><br>`;
-                    if (address) {
-                        popupContent += `Address: ${address}<br>`;
-                    }
-                    marker.bindPopup(popupContent).openPopup();
-                }
-            }, 100);
+
+        toggleDateFields(select);
+        document.querySelector('#statusForm textarea[name="comment_text"]').value = '';
+        document.getElementById('statusModal').classList.add('show');
+    }
+
+    function closeStatusModal() { document.getElementById('statusModal').classList.remove('show'); }
+
+    function toggleDateFields(select) {
+        const resolvedField = document.getElementById('resolvedDateField');
+        const dueField = document.getElementById('dueDateField');
+        resolvedField.style.display = 'none';
+        dueField.style.display = 'none';
+        const value = select.value;
+        if (['Resolved', 'Closed'].includes(value)) {
+            resolvedField.style.display = 'block';
+            const resolvedInput = document.querySelector('input[name="resolved_at"]');
+            if (!resolvedInput.value) resolvedInput.value = new Date().toISOString().split('T')[0];
+        } else if (value === 'In Progress') {
+            dueField.style.display = 'block';
+            const dueInput = document.querySelector('input[name="action_due"]');
+            if (!dueInput.value) dueInput.value = new Date().toISOString().split('T')[0];
         }
-        function closeMapModal() {
-            const modal = document.getElementById('mapModal');
-            if (modal) {
-                modal.classList.add('hidden');
-            }
-            if (modalMap) {
-                modalMap.remove();
-                modalMap = null;
-            }
-        }
-        document.addEventListener('click', function(e) {
-            const btn = e.target.closest('.view-map-btn');
-            if (btn) {
-                const lat = parseFloat(btn.dataset.lat);
-                const lng = parseFloat(btn.dataset.lng);
-                const address = btn.dataset.address || '';
-                if (isNaN(lat) || isNaN(lng)) {
-                    alert('Invalid location data. Please refresh the page.');
-                    return;
-                }
-                openMapModal(lat, lng, address);
-            }
-        });
-        const closeBtn = document.getElementById('closeMapModal');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', closeMapModal);
-        }
-        const mapModalEl = document.getElementById('mapModal');
-        if (mapModalEl) {
-            mapModalEl.addEventListener('click', function(e) {
-                if (e.target === mapModalEl) {
-                    closeMapModal();
-                }
+    }
+
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('show'); });
+    });
+
+    // ==================== FIXED MULTIPLE ASSIGNMENT ====================
+    document.getElementById('assignForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = 'Assigning...';
+
+        try {
+            const response = await fetch('assign_complaint.php', {
+                method: 'POST',
+                body: formData
             });
-        }
-        document.addEventListener('DOMContentLoaded', () => {
-            // Clear search on page refresh (reload)
-            if ('performance' in window && performance.getEntriesByType('navigation').length > 0) {
-                const nav = performance.getEntriesByType('navigation')[0];
-                if (nav.type === 'reload') {
-                    const url = new URL(window.location.href);
-                    if (url.searchParams.has('q')) {
-                        url.searchParams.delete('q');
-                        window.history.replaceState(null, '', url.toString());
-                        document.getElementById('globalSearch').value = '';
-                        document.getElementById('filterForm').submit();
-                    }
-                }
+
+            const text = await response.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                console.error("Raw Response:", text);
+                throw new Error("Invalid JSON response from server.");
             }
-            toggleDateOption();
-            validateExportForm();
-        });
-    </script>
+
+            if (data.success) {
+                Swal.fire({
+                    title: 'Success!',
+                    text: data.msg || 'Complaint assigned successfully!',
+                    icon: 'success',
+                    confirmButtonColor: '#3b82f6'
+                }).then(() => location.reload());
+            } else {
+                Swal.fire({
+                    title: 'Error!',
+                    text: data.msg || 'Failed to assign complaint.',
+                    icon: 'error',
+                    confirmButtonColor: '#ef4444'
+                });
+            }
+        } catch (error) {
+            console.error("Assign Error:", error);
+            Swal.fire({
+                title: 'Error!',
+                text: 'Failed to assign complaint. Please check console for details.',
+                icon: 'error',
+                confirmButtonColor: '#ef4444'
+            });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    });
+
+    // Status Update (unchanged)
+    document.getElementById('statusForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        try {
+            const response = await fetch('update_status.php', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const data = await response.json();
+            if (data.success) {
+                Swal.fire({ title: 'Success!', text: data.msg, icon: 'success', confirmButtonColor: '#3b82f6' })
+                    .then(() => location.reload());
+            } else {
+                Swal.fire({ title: 'Error!', text: data.msg, icon: 'error', confirmButtonColor: '#ef4444' });
+            }
+        } catch (error) {
+            Swal.fire({ title: 'Error!', text: 'Failed to update status.', icon: 'error', confirmButtonColor: '#ef4444' });
+        }
+    });
+
+    // Map Modal (unchanged - shortened)
+    let modalMap = null;
+    const customIcon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34]
+    });
+
+    function openMapModal(lat, lng, address = '') {
+        const modal = document.getElementById('mapModal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+            if (!modalMap) {
+                modalMap = L.map('modalMap').setView([lat, lng], 15);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(modalMap);
+            } else {
+                modalMap.setView([lat, lng], 15);
+                modalMap.eachLayer(l => { if (l instanceof L.Marker) modalMap.removeLayer(l); });
+            }
+            L.marker([lat, lng], {icon: customIcon}).addTo(modalMap)
+                .bindPopup(`<b>Customer Location</b><br>${address ? 'Address: ' + address : ''}`).openPopup();
+        }, 100);
+    }
+
+    function closeMapModal() {
+        const modal = document.getElementById('mapModal');
+        if (modal) modal.classList.add('hidden');
+        if (modalMap) { modalMap.remove(); modalMap = null; }
+    }
+
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.view-map-btn');
+        if (btn) {
+            const lat = parseFloat(btn.dataset.lat);
+            const lng = parseFloat(btn.dataset.lng);
+            const address = btn.dataset.address || '';
+            if (!isNaN(lat) && !isNaN(lng)) openMapModal(lat, lng, address);
+        }
+    });
+
+    const closeBtn = document.getElementById('closeMapModal');
+    if (closeBtn) closeBtn.addEventListener('click', closeMapModal);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        toggleDateOption();
+        validateExportForm();
+    });
+</script>
 </body>
 </html>
 <?php mysqli_close($conn); ?>

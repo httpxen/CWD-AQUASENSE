@@ -95,9 +95,43 @@ if (!empty($params)) {
 mysqli_stmt_execute($stmt_logs);
 $logs_result = mysqli_stmt_get_result($stmt_logs);
 
-$logs = [];
+$raw_logs = [];
 while ($row = mysqli_fetch_assoc($logs_result)) {
-    $logs[] = $row;
+    $raw_logs[] = $row;
+}
+
+// ---------------------------
+// Group assign logs that fired
+// at the same time for the same
+// complaint into a single row
+// ---------------------------
+$logs = [];
+$assign_groups = []; // key: "staff_id|entity_id|minute"
+
+foreach ($raw_logs as $row) {
+    if ($row['action'] === 'assign' && $row['entity_type'] === 'complaint') {
+        // Group by staff + entity + minute (within 60 seconds = same batch)
+        $minute_key = date('YmdHi', strtotime($row['created_at']));
+        $group_key  = ($row['staff_id'] ?? 'x') . '|' . $row['entity_id'] . '|' . $minute_key;
+
+        if (isset($assign_groups[$group_key])) {
+            // Merge assignee into existing group
+            $idx  = $assign_groups[$group_key];
+            $newv = json_decode($row['new_values'] ?? '{}', true);
+            $name = $newv['assigned_to'] ?? '';
+            if ($name && is_string($name)) {
+                $logs[$idx]['_assignees'][] = $name;
+            }
+        } else {
+            $newv = json_decode($row['new_values'] ?? '{}', true);
+            $name = $newv['assigned_to'] ?? '';
+            $row['_assignees'] = ($name && is_string($name)) ? [$name] : [];
+            $assign_groups[$group_key] = count($logs);
+            $logs[] = $row;
+        }
+    } else {
+        $logs[] = $row;
+    }
 }
 ?>
 
@@ -223,7 +257,7 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                 <div class="px-6 py-4">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-4">
-                            <span class="text-sm text-gray-500">Track all staff actions — complaints and announcements</span>
+                            
                         </div>
 
                         <div class="flex items-center space-x-3 p-2 profile-card hover:bg-gray-50 rounded-xl transition-all duration-200 group cursor-pointer relative" id="profileDropdown">
@@ -269,7 +303,6 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                             <option value="delete" <?php if ($action_filter === 'delete') echo 'selected'; ?>>Delete</option>
                         </select>
 
-                        
                         <select name="entity" class="px-5 py-3 border border-gray-300 rounded-xl focus:outline-none">
                             <option value="">All Entities</option>
                             <option value="complaint"    <?php if ($entity_filter === 'complaint')    echo 'selected'; ?>>Complaint</option>
@@ -307,14 +340,51 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($logs as $log):
-                                        $raw_details    = $log['details'] ?? '-';
+                                        $raw_details_raw = $log['details'] ?? '-';
+                                        $raw_details     = is_array($raw_details_raw) ? json_encode($raw_details_raw) : (string) $raw_details_raw;
                                         $display_details = htmlspecialchars($raw_details);
                                         $entity_type    = $log['entity_type'] ?? '';
+                                        $action         = $log['action'] ?? '';
+
+                                        // ============================================================
+                                        // DISPLAY: COMPLAINT — assign action (show who was assigned)
+                                        // ============================================================
+                                        if ($entity_type === 'complaint' && $action === 'assign') {
+                                            $newv = !empty($log['new_values']) ? json_decode($log['new_values'], true) : [];
+                                            $oldv = !empty($log['old_values']) ? json_decode($log['old_values'], true) : [];
+
+                                            // Use pre-grouped assignee list if available
+                                            $assignees = !empty($log['_assignees'])
+                                                ? $log['_assignees']
+                                                : ((!empty($newv['assigned_to']) && is_string($newv['assigned_to'])) ? [$newv['assigned_to']] : []);
+
+                                            $assignees_str = implode(', ', array_unique($assignees));
+
+                                            $assign_html  = "<div class='text-sm space-y-1'>";
+                                            $assign_html .= "<div><strong class='text-purple-700'>Complaint Assigned</strong></div>";
+
+                                            if ($assignees_str) {
+                                                $assign_html .= "<div>• <strong>Assigned To:</strong> <span class='text-green-600 font-semibold'>" . htmlspecialchars($assignees_str) . "</span></div>";
+                                            }
+
+                                            if (!empty($newv['status'])) {
+                                                $status_val = is_array($newv['status']) ? implode(', ', $newv['status']) : (string) $newv['status'];
+                                                $assign_html .= "<div>• <strong>Status set to:</strong> <span class='text-blue-600'>" . htmlspecialchars($status_val) . "</span></div>";
+                                            }
+
+                                            // Fallback if nothing parsed
+                                            if (!$assignees_str && $raw_details !== '-') {
+                                                $raw_str = is_array($raw_details) ? json_encode($raw_details) : (string) $raw_details;
+                                                $assign_html .= "<div class='text-gray-500'>" . htmlspecialchars($raw_str) . "</div>";
+                                            }
+
+                                            $assign_html .= "</div>";
+                                            $display_details = $assign_html;
 
                                         // ============================================================
                                         // DISPLAY: COMPLAINT — status updates with old/new values
                                         // ============================================================
-                                        if ($entity_type === 'complaint' && !empty($log['old_values']) && !empty($log['new_values'])) {
+                                        } elseif ($entity_type === 'complaint' && !empty($log['old_values']) && !empty($log['new_values'])) {
                                             $oldv = json_decode($log['old_values'], true);
                                             $newv = json_decode($log['new_values'], true);
 
@@ -358,7 +428,6 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                                         // DISPLAY: ANNOUNCEMENT — create / update / delete
                                         // ============================================================
                                         } elseif ($entity_type === 'announcement') {
-                                            $action = $log['action'] ?? '';
 
                                             if ($action === 'create' && !empty($log['new_values'])) {
                                                 $newv         = json_decode($log['new_values'], true);
@@ -456,7 +525,6 @@ while ($row = mysqli_fetch_assoc($logs_result)) {
                                         </td>
                                         <td class="px-6 py-4 text-sm">
                                             <?php
-                                            // ✅ Color-coded entity badge
                                             $et = $log['entity_type'] ?? '';
                                             $et_label = ucfirst($et);
                                             $et_class = $et === 'announcement'

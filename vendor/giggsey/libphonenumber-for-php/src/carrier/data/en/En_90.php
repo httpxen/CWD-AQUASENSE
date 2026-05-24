@@ -21,6 +21,8 @@ class En_90
         9053 => 'Turkcell',
         9054 => 'Vodafone',
         9055 => 'Turk Telekom',
+        90574 => 'Vodafone',
+        90575 => 'Turk Telekom',
         905610 => 'Selam Mobile',
         905616 => 'Turkcell',
         9051616 => 'Turkcell',
